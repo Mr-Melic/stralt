@@ -4,6 +4,7 @@ import {
   APPLY_REWARDS_MAX_XP_DELTA,
 } from "./applyRewardsResult.ts";
 import {
+  BATTLE_GRID_CELL_COUNT,
   BETRAYAL_ENRAGE_MULT,
   BLOOD_MEND_CRIT_HEAL,
   BLOOD_MEND_HEAL,
@@ -11,6 +12,7 @@ import {
   BOSS_RUSH_ROOM9_CATALOG_DOKA,
   CATALOG_BOSS_HP_SAMPLE,
   DOKA_HEAL_HP_PER_DOKA,
+  ENEMY_SUMMON_CAP_SIM,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
   INITIATIVE_OVERLAY_ENEMY_CHC,
@@ -19,10 +21,12 @@ import {
   KIT_INFERNO_DIRECT_DAMAGE,
   KIT_STRIKE_DAMAGE,
   LIFE_DRAIN_HEAL,
+  MAX_ENEMIES_SIM,
   PLAYER_CREATE_EVASION,
   PLAYER_CREATE_INIT,
   PLAYER_CREATE_RESILIENCE,
   PLAYER_CREATE_SR,
+  PLAYER_SUMMON_CAP_LIVE,
   SHIELD_CHARM_ABSORB,
   SUMMON_ARCHER_HP_SCALE,
   SUMMON_BOMBER_HP_SCALE,
@@ -61,11 +65,13 @@ import {
   firstLevelFormulaApExceedsPersistCap,
   firstLevelFormulaFrostCastsAtLeast,
   firstLevelFormulaMpAtLeast,
+  firstLevelFormulaSummonCastsAtLeast,
   firstLevelHazardMaxBelowHpPercent,
   firstLevelLinearHpNotSafeInteger,
   firstLevelResCanHit100,
   firstLevelSpellFailHitsZero,
   firstLevelSpellRangeHitsCap,
+  firstLevelTimestepFrostCastsAtLeast,
   firstPlayerLevelBossRushCrushOneShots,
   firstPlayerLevelBossRushHpExceedsCatalog,
   firstPlayerLevelBossRushRoomDokaExceedsCatalog,
@@ -73,12 +79,15 @@ import {
   firstPlayerLevelBossRushRoomXpHitsClamp,
   firstPlayerLevelDokaHealFromOneExceeds,
   firstPlayerLevelPotionBeatsFlatDokaHeal,
+  firstPlayerLevelSummonMaxInitExceedsCreate,
+  firstPlayerLevelSummonResCanHit100,
   firstPlayerLevelSurvivesCrushRecv,
   firstPlayerLevelWorldBossStatCanHit100,
   firstSpellLevelCostExceeds,
   firstStressLevelFullyUnderDungeonCap,
   formulaAp,
   formulaMp,
+  frostCastsWithTimestepRefill,
   groundDokaMean,
   healthPotionDokaPerHp,
   healthPotionHpRestored,
@@ -98,12 +107,19 @@ import {
   playerFrostRaw,
   playerFrostTurnsToKill,
   playerFrostTurnsToKillHp,
+  playerSummonCastsPerTurn,
+  playerSummonStatBounds,
   runLongHorizonSim,
   spawnPlaceholderDamage,
   spawnPlaceholderHp,
   spellFailChance,
   spellUpgradeCostBigInt,
+  starterDireWolfApCost,
+  starterDireWolfCooldownTurns,
   starterFrostCooldownTurns,
+  starterTimestepApCost,
+  starterTimestepCooldownTurns,
+  starterTimestepIsOncePerBattle,
   summonerChance,
   victoryHpFloor,
   worldBossChip1FrostTurns,
@@ -451,5 +467,45 @@ assert.equal(report.battleApFrostDump.formulaApAt100000, 4008);
 assert.equal(report.battleApFrostDump.firstLevelFormulaCastsExceedPersist, 325);
 assert.equal(report.battleApFrostDump.firstLevel100FormulaCasts, 7300);
 assert.equal(report.battleApFrostDump.aiStillOneActionPerTurn, true);
+
+assert.equal(starterTimestepCooldownTurns(), 0);
+assert.equal(starterTimestepApCost(), 0);
+assert.equal(starterTimestepIsOncePerBattle(), true);
+assert.equal(frostCastsWithTimestepRefill(formulaAp(325)), 14);
+assert.equal(frostCastsWithTimestepRefill(formulaAp(100_000)), 2672);
+assert.equal(firstLevelTimestepFrostCastsAtLeast(100), 3550);
+assert.equal(report.battleApFrostDump.starterTimestepApCost, 0);
+assert.equal(report.battleApFrostDump.frostCastsWithTimestepAt100000, 2672);
+assert.equal(report.battleApFrostDump.timestepRestoresFormulaAp, true);
+
+assert.equal(starterDireWolfCooldownTurns(), 0);
+assert.equal(starterDireWolfApCost(), 3);
+assert.equal(PLAYER_SUMMON_CAP_LIVE, null);
+assert.equal(ENEMY_SUMMON_CAP_SIM, 2);
+assert.equal(MAX_ENEMIES_SIM, 20);
+assert.equal(BATTLE_GRID_CELL_COUNT, 256);
+assert.equal(playerSummonCastsPerTurn(formulaAp(1)), 2);
+assert.equal(playerSummonCastsPerTurn(formulaAp(325)), 7);
+assert.equal(playerSummonCastsPerTurn(formulaAp(100_000)), 1336);
+assert.equal(firstLevelFormulaSummonCastsAtLeast(3), 25);
+assert.equal(firstLevelFormulaSummonCastsAtLeast(7), 325);
+assert.equal(firstLevelFormulaSummonCastsAtLeast(21), 1375);
+assert.equal(firstLevelFormulaSummonCastsAtLeast(256), 19_000);
+assert.equal(firstPlayerLevelSummonMaxInitExceedsCreate(), 4);
+assert.equal(firstPlayerLevelSummonResCanHit100(), 107);
+assert.equal(playerSummonStatBounds(1000).init.max, 1206);
+assert.equal(playerSummonStatBounds(2500).init.max, 3006);
+assert.equal(playerSummonStatBounds(107).res.max, 100);
+assert.equal(report.playerSummonDump.playerSummonCap, null);
+assert.equal(report.playerSummonDump.enemySummonCap, 2);
+assert.equal(report.playerSummonDump.castsAt100000, 1336);
+assert.equal(report.playerSummonDump.firstLevelCastsExceedEnemyCap, 25);
+assert.equal(report.playerSummonDump.firstLevelCastsExceedMaxEnemies, 1375);
+assert.equal(report.playerSummonDump.firstLevelCastsFillGrid, 19_000);
+assert.equal(report.playerSummonDump.hpUsesSpellLevelNotCharacterLevel, true);
+assert.equal(
+  report.playerSummonDump.spawnUsesCharacterLevelForComputeEnemyStats,
+  true,
+);
 
 console.log("longHorizonSim.test: ok");

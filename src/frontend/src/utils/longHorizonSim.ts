@@ -8,6 +8,8 @@
 import {
   ENEMY_SUMMONER_CHANCE_BASE,
   ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE,
+  ENEMY_SUMMON_CAP,
+  MAX_ENEMIES,
   PLAYER_BASE_AP,
   PLAYER_BASE_MP,
   SUMMON_BASE_HP,
@@ -1036,6 +1038,109 @@ export function firstLevelFormulaFrostCastsAtLeast(
   return null;
 }
 
+function starterSpellById(id: string) {
+  return starterSpells.find((s) => s.id === id);
+}
+
+function catalogCooldownTurns(id: string): number {
+  const n = Math.floor(Number(starterSpellById(id)?.cooldown) || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function catalogApCost(id: string): number {
+  return Math.max(0, Math.floor(Number(starterSpellById(id)?.apCost) || 0));
+}
+
+/** Catalog Timestep (`spell-timestep`): AP 0, no cooldown, once per battle. */
+export function starterTimestepCooldownTurns(): number {
+  return catalogCooldownTurns("spell-timestep");
+}
+
+export function starterTimestepApCost(): number {
+  return catalogApCost("spell-timestep");
+}
+
+export function starterTimestepIsOncePerBattle(): boolean {
+  return starterSpellById("spell-timestep")?.isTimestep === true;
+}
+
+/**
+ * Dump remaining AP, Timestep restores `getPlayerBaseStats` AP, dump again.
+ * Live restore (`WorldExploration.tsx` restoreApMp) uses the formula, not persist 20.
+ */
+export function frostCastsWithTimestepRefill(ap: number): number {
+  return playerFrostCastsPerTurn(ap) * 2;
+}
+
+export function firstLevelTimestepFrostCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (frostCastsWithTimestepRefill(formulaAp(level)) >= need) return level;
+  }
+  return null;
+}
+
+/** Catalog Dire Wolf. AP 3, no cooldown. Player spawn path has no cap. */
+export const SUMMON_DIRE_WOLF_ID = "summon-dire-wolf";
+
+export function starterDireWolfCooldownTurns(): number {
+  return catalogCooldownTurns(SUMMON_DIRE_WOLF_ID);
+}
+
+export function starterDireWolfApCost(): number {
+  return catalogApCost(SUMMON_DIRE_WOLF_ID);
+}
+
+export function playerSummonCastsPerTurn(ap: number): number {
+  const cost = Math.max(1, starterDireWolfApCost());
+  return Math.max(0, Math.floor(Math.max(0, ap) / cost));
+}
+
+export function firstLevelFormulaSummonCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (playerSummonCastsPerTurn(formulaAp(level)) >= need) return level;
+  }
+  return null;
+}
+
+/** Live player spawn (`spawnPlayerSummon`) does not read ENEMY_SUMMON_CAP. */
+export const PLAYER_SUMMON_CAP_LIVE: number | null = null;
+export const ENEMY_SUMMON_CAP_SIM = ENEMY_SUMMON_CAP;
+export const MAX_ENEMIES_SIM = MAX_ENEMIES;
+export const BATTLE_GRID_CELL_COUNT = WORLD_GRID_SIZE * WORLD_GRID_SIZE;
+
+/**
+ * Unknown summon `pieceType` ("wolf"/"golem"/…) uses king multipliers
+ * (`getEnemyBaseStats` fallback). Seed is the spell id, same as spawn.
+ */
+export function playerSummonRolledStats(playerLevel: number) {
+  return getEnemyBaseStats(playerLevel, "king", SUMMON_DIRE_WOLF_ID);
+}
+
+export function playerSummonStatBounds(playerLevel: number) {
+  return enemyStatBounds(playerLevel, "king");
+}
+
+export function firstPlayerLevelSummonMaxInitExceedsCreate(): number | null {
+  for (let level = 1; level <= 400; level++) {
+    if (playerSummonStatBounds(level).init.max > PLAYER_CREATE_INIT) {
+      return level;
+    }
+  }
+  return null;
+}
+
+export function firstPlayerLevelSummonResCanHit100(): number | null {
+  return firstLevelResCanHit100("king");
+}
+
 /** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
 export const HAZARD_LAVA_MIN = 8;
 export const HAZARD_LAVA_MAX = 15;
@@ -1338,6 +1443,11 @@ export function runLongHorizonSim() {
       overlayHardcodedRes: INITIATIVE_OVERLAY_ENEMY_RES,
       overlayHardcodedChc: INITIATIVE_OVERLAY_ENEMY_CHC,
       worldBossOverlayAp: overlayEnemyAp(worldBossEnemyLevel(level)),
+      frostCastsWithTimestep: frostCastsWithTimestepRefill(formulaAp(level)),
+      summonCastsFormulaAp: playerSummonCastsPerTurn(formulaAp(level)),
+      summonMaxInit: playerSummonStatBounds(level).init.max,
+      summonMaxRes: playerSummonStatBounds(level).res.max,
+      summonCatalogHp: catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
     };
   });
 
@@ -1411,7 +1521,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-10-22T00:20:00.000Z",
+    generatedAt: "2026-10-23T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -2045,6 +2155,51 @@ export function runLongHorizonSim() {
       ),
       firstLevel100FormulaCasts: firstLevelFormulaFrostCastsAtLeast(100),
       aiStillOneActionPerTurn: true,
+      starterTimestepCooldownTurns: starterTimestepCooldownTurns(),
+      starterTimestepApCost: starterTimestepApCost(),
+      starterTimestepIsOncePerBattle: starterTimestepIsOncePerBattle(),
+      timestepRestoresFormulaAp: true,
+      frostCastsWithTimestepAt325: frostCastsWithTimestepRefill(formulaAp(325)),
+      frostCastsWithTimestepAt100000: frostCastsWithTimestepRefill(
+        formulaAp(100_000),
+      ),
+      firstLevelTimestep100FormulaCasts:
+        firstLevelTimestepFrostCastsAtLeast(100),
+    },
+    playerSummonDump: {
+      direWolfApCost: starterDireWolfApCost(),
+      direWolfCooldownTurns: starterDireWolfCooldownTurns(),
+      playerSummonCap: PLAYER_SUMMON_CAP_LIVE,
+      enemySummonCap: ENEMY_SUMMON_CAP_SIM,
+      maxEnemiesOverworld: MAX_ENEMIES_SIM,
+      battleGridCells: BATTLE_GRID_CELL_COUNT,
+      castsAt1: playerSummonCastsPerTurn(formulaAp(1)),
+      castsAt325: playerSummonCastsPerTurn(formulaAp(325)),
+      castsAt1000: playerSummonCastsPerTurn(formulaAp(1000)),
+      castsAt2500: playerSummonCastsPerTurn(formulaAp(2500)),
+      castsAt10000: playerSummonCastsPerTurn(formulaAp(10_000)),
+      castsAt100000: playerSummonCastsPerTurn(formulaAp(100_000)),
+      firstLevelCastsExceedEnemyCap: firstLevelFormulaSummonCastsAtLeast(
+        ENEMY_SUMMON_CAP_SIM + 1,
+      ),
+      firstLevelCastsExceedMaxEnemies: firstLevelFormulaSummonCastsAtLeast(
+        MAX_ENEMIES_SIM + 1,
+      ),
+      firstLevelCastsFillGrid: firstLevelFormulaSummonCastsAtLeast(
+        BATTLE_GRID_CELL_COUNT,
+      ),
+      spawnUsesCharacterLevelForComputeEnemyStats: true,
+      pieceTypeFallsBackToKing: true,
+      hpUsesSpellLevelNotCharacterLevel: true,
+      hunterCatalogHp: catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
+      firstPlayerLevelSummonMaxInitExceedsCreate:
+        firstPlayerLevelSummonMaxInitExceedsCreate(),
+      firstPlayerLevelSummonRes100: firstPlayerLevelSummonResCanHit100(),
+      summonMaxInitAt1: playerSummonStatBounds(1).init.max,
+      summonMaxInitAt1000: playerSummonStatBounds(1000).init.max,
+      summonMaxInitAt2500: playerSummonStatBounds(2500).init.max,
+      summonMaxResAt107: playerSummonStatBounds(107).res.max,
+      capPackKingMaxInitAt1000: enemyStatBounds(1000, "king").init.max,
     },
   };
 }
