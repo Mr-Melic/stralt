@@ -174,6 +174,7 @@ import {
   collectMandatoryProgressionCells,
   resolveControlledSummonMoveDest,
 } from "../engine/occupancy";
+import { drawPixelPattern as paintPixelPattern } from "../engine/pixelPattern";
 import {
   planPlayerCastAttempt,
   planPlayerCastResources,
@@ -3837,7 +3838,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     [canvasSize, effectiveTileW, effectiveTileH, isDesktop],
   );
 
-  // FIXED: Draw pixel pattern with perfect tile alignment - patterns now match tile dimensions exactly
+  // Paint math lives in engine/pixelPattern.ts. Keep this empty-deps
+  // binding so call sites stay stable. Do not unify with
+  // pieceArt.drawPatternInline (that fallback does not restore).
   const drawPixelPattern = useCallback(
     (
       ctx: CanvasRenderingContext2D,
@@ -3852,35 +3855,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       },
       scale: { x: number; y: number } = { x: 1, y: 1 },
     ) => {
-      const pixelSize = 3;
-      const patternWidth = pattern[0].length * pixelSize * scale.x;
-      const patternHeight = pattern.length * pixelSize * scale.y;
-
-      // FIXED: Perfect centering using Math.round for pixel-perfect alignment, matching battle mode exactly
-      const startX = Math.round(x - patternWidth / 2);
-      const startY = Math.round(y - patternHeight / 2);
-
-      for (let row = 0; row < pattern.length; row++) {
-        for (let col = 0; col < pattern[row].length; col++) {
-          const pixelValue = pattern[row][col];
-          if (pixelValue === 0) continue;
-
-          let color = colors.primary;
-          if (pixelValue === 1) color = colors.secondary;
-          if (pixelValue === 2) color = colors.accent;
-          if (pixelValue === 3 && colors.extra) color = colors.extra;
-
-          ctx.fillStyle = color;
-          ctx.fillRect(
-            Math.round(startX + col * pixelSize * scale.x),
-            Math.round(startY + row * pixelSize * scale.y),
-            Math.ceil(pixelSize * scale.x),
-            Math.ceil(pixelSize * scale.y),
-          );
-        }
-      }
-
-      ctx.restore();
+      paintPixelPattern(ctx, pattern, x, y, colors, scale);
     },
     [],
   );

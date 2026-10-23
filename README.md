@@ -19,6 +19,7 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/engine/mapGen.ts` | Archetypes + `finalizePlayableLayout` (spawn / exit / hostile reachability) |
 | `src/frontend/src/engine/spawnPolicy.ts` | Overworld spawn filters + family variants + dungeon extras (not placement) |
 | `src/frontend/src/engine/worldFeatures.ts` | World-dynamics catalog (tests only — not wired into map gen) |
+| `src/frontend/src/engine/pixelPattern.ts` | Player / combatant pixel-pattern paint (3px cells, restore without save) |
 | `src/frontend/src/utils/progressPersist.ts` | World-session lock: serialize `applyRewards`, `redeemGameKey`, `saveBattleStats` |
 | `src/frontend/src/utils/dokaPersist.ts` | One-shot ground / shrine / dungeon-complete credits before `applyRewards` |
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP / opening-turn / Sacrifice accumulators |
