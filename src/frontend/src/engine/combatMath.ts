@@ -18,17 +18,40 @@ const DEFAULT_TIER_CONFIG: TierSpawnConfig = {
   threeOrMorePercent: 5,
 };
 
+// PERF-2026-10-23-163: cache by localStorage raw string so map-gen /
+// pickEnemyLevelFromTiers do not JSON.parse on every call. Re-read the key
+// each time; when the blob is unchanged, return the parsed object. Writers
+// that setItem a new JSON string invalidate automatically (raw !== cached raw).
+let _cachedTierConfigRaw: string | null = null;
 let _cachedBackendTierConfig: TierSpawnConfig | null = null;
 
 export function loadTierConfig(): TierSpawnConfig {
-  if (_cachedBackendTierConfig) return _cachedBackendTierConfig;
   try {
     const raw = localStorage.getItem("pbv_tier_spawn_config");
-    if (raw) return { ...DEFAULT_TIER_CONFIG, ...JSON.parse(raw) };
+    if (raw) {
+      if (raw === _cachedTierConfigRaw && _cachedBackendTierConfig) {
+        return _cachedBackendTierConfig;
+      }
+      const parsed = {
+        ...DEFAULT_TIER_CONFIG,
+        ...(JSON.parse(raw) as Partial<TierSpawnConfig>),
+      };
+      _cachedTierConfigRaw = raw;
+      _cachedBackendTierConfig = parsed;
+      return parsed;
+    }
   } catch (e) {
     console.warn("[AI] Tier config load failed, using safe defaults:", e);
   }
+  _cachedTierConfigRaw = null;
+  _cachedBackendTierConfig = null;
   return DEFAULT_TIER_CONFIG;
+}
+
+/** Test/helper: drop the parsed-tier cache (e.g. after a fixture mutates storage). */
+export function clearTierConfigCacheForTests(): void {
+  _cachedTierConfigRaw = null;
+  _cachedBackendTierConfig = null;
 }
 
 const AI_TIER_VARIANCE_CHANCE = 0.3;
