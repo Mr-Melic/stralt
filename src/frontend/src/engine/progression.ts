@@ -147,6 +147,12 @@ const ENEMY_PIECE_MULTIPLIERS: Record<
  *
  * Returns { sp, sr, init, res, chc } only — NO hp, NO ap, NO mp field, matching
  * the original contract documented in AGENTS.md.
+ *
+ * Live enemy HP is WorldExploration.calcEnemyMaxHp:
+ * `50 * (1 + (level-1) * growth)` from `pbv_levelup_config`. Motoko
+ * `getEnemyHPForLevel` is unused by the client (different formula:
+ * `(30 + (tier-1)*20) * (1 + level * growth)`). Admin `EnemyConfig.hp` is
+ * catalog-only. Not a player career cap.
  */
 export function getEnemyBaseStats(
   level: number,
