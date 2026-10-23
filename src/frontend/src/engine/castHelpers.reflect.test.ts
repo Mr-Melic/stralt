@@ -404,3 +404,105 @@ describe("applyDamageToEnemy drain → challenge healUsed", () => {
     );
   });
 });
+
+describe("applyDamageToEnemy drain after same-cast lethal reflect", () => {
+  it("does not resurrect from a lethal Void Mirror Life Drain", () => {
+    const target = enemy({ family: "void_mirror", hp: 8 });
+    let hp = 8;
+    let restored = 0;
+    applyDamageToEnemy({
+      hitTarget: target,
+      isFirstTarget: true,
+      deps: stubDeps({
+        spell: { id: "starter-drain", name: "Life Drain" },
+        isDrainSpell: true,
+        preCritDmgBM: 40,
+        maxHp: 50,
+        characterStats: { hp: 8 },
+        targetsToHit: [target],
+        enemyHpMap: { e1: 8 },
+        setCharacterStats: (updater) => {
+          const next = updater({ hp } as never);
+          hp = next.hp;
+        },
+        onPlayerHealed: (amount) => {
+          restored = amount;
+        },
+      }),
+    });
+    assert.equal(hp, 0);
+    assert.equal(restored, 0);
+  });
+
+  it("does not resurrect from a lethal Reflect Shield Life Drain", () => {
+    const target = enemy({ id: "boss-1", family: "default", hp: 40 });
+    let hp = 5;
+    let restored = 0;
+    applyDamageToEnemy({
+      hitTarget: target,
+      isFirstTarget: true,
+      deps: stubDeps({
+        spell: { id: "starter-drain", name: "Life Drain" },
+        isDrainSpell: true,
+        preCritDmgBM: 20,
+        maxHp: 50,
+        characterStats: { hp: 5 },
+        targetsToHit: [target],
+        enemyHpMap: { "boss-1": 40 },
+        turnOrderRef: {
+          current: [
+            {
+              id: "boss-1",
+              type: "enemy",
+              initiative: 20,
+              name: "Boss",
+              pieceIcon: "K",
+              hp: 40,
+              maxHp: 200,
+              level: 10,
+              isBoss: true,
+            },
+          ],
+        },
+        bossStateRef: { current: { reflectShieldActive: true } },
+        setCharacterStats: (updater) => {
+          const next = updater({ hp } as never);
+          hp = next.hp;
+        },
+        onPlayerHealed: (amount) => {
+          restored = amount;
+        },
+      }),
+    });
+    assert.equal(hp, 0);
+    assert.equal(restored, 0);
+  });
+
+  it("still drains after a non-lethal Void Mirror hit", () => {
+    const target = enemy({ family: "void_mirror", hp: 40 });
+    let hp = 40;
+    let restored = 0;
+    applyDamageToEnemy({
+      hitTarget: target,
+      isFirstTarget: true,
+      deps: stubDeps({
+        spell: { id: "starter-drain", name: "Life Drain" },
+        isDrainSpell: true,
+        preCritDmgBM: 20,
+        maxHp: 50,
+        characterStats: { hp: 40 },
+        targetsToHit: [target],
+        enemyHpMap: { e1: 40 },
+        setCharacterStats: (updater) => {
+          const next = updater({ hp } as never);
+          hp = next.hp;
+        },
+        onPlayerHealed: (amount) => {
+          restored = amount;
+        },
+      }),
+    });
+    assert.equal(restored, 10);
+    assert.equal(hp, 45);
+  });
+});
