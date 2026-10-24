@@ -5,7 +5,7 @@ SOURCE_AUTOMATION: Mechanic Interaction Matrix Auditor
 HEAD inspected: `0f5363f` (`Merge pull request #332`)  
 Gameplay code: not modified.
 
-Do not re-file OPEN 08-31 / 09-01 / 09-02 / 09-21…09-29 / 10-21 / 10-22 / 10-23 items. Do not clone EBMA-2026-09-01-004 (player `debuffStat` never applied — still true on this HEAD; owned by EBMA). Do not invent Gravity Well / Fog of War placeholders, push/pull unwired, or “Mirror Field unwired” (Blood Moon + Mirror Field remain wired in `resolvePlayerCast`).
+Do not re-file OPEN 08-31 / 09-01 / 09-02 / 09-21…09-29 / 10-21 / 10-22 / 10-23 items or this file's 001–005. Do not clone EBMA-2026-09-01-004 (player `debuffStat` never applied — still true on this HEAD; owned by EBMA) or EBMA-2026-09-01-012 (Blood Mend / Rally CHC crit read). Do not invent Gravity Well / Fog of War placeholders, push/pull unwired, or “Mirror Field unwired” (Blood Moon + Mirror Field remain wired in `resolvePlayerCast`).
 
 ---
 
@@ -100,4 +100,42 @@ AUTONOMY: IMPLEMENT_SNAPSHOT_STATS
 DEPENDENCIES: Pairs cleanly with 001.  
 REGRESSION_RISK: LOW–MEDIUM — kit damage drops vs tanky enemies.  
 VALIDATION_REQUIRED: Control Strike vs RES 30 / SR 20 fixture.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MIMA-2026-10-24-006  
+SOURCE_AUTOMATION: Mechanic Interaction Matrix Auditor  
+TITLE: Boss Rush / rest / white / Death Realm portal paths never increment `mapsVisited` so `explore_25_maps` stalls in runs  
+CATEGORY: achievements + portals + Boss Rush + dungeons  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `mapsVisitedCountRef.current += 1` exists in exactly one place (`WorldExploration.tsx` 6471), on the main free-exploration / dungeon-chain generate path after a normal portal. Boss Rush entry (`6077–6089`), Boss Rush room-advance (`6095–6110`), white sanctuary (`6115–6155`), and rest entry (`6158–6218`) each `return` after `cleanupMap` / map spawn and only bump `mapCount` (e.g. white/rest `6141` / `6187`) — never the achievement counter. Death Realm load bumps `mapCount` (`13471`) without `mapsVisited` (intentional for death). `clientTrustedVictoryAchievementConditions` / the idle effect still gate `explore_25_maps` on `mapsVisited >= 25` (`victoryAchievements.ts` 32; WX `2275–2276`). A full Boss Rush run can clear several combat rooms with 0 counter growth. Distinct from MIMA-2026-10-21-005 (React effect deps when the counter *does* increment) and 10-21-004 (Boss Rush room-clear × wallet/level threshold feats). Tests: `portalRules.test.ts` / `victoryAchievements.test.ts` never assert mapsVisited on BR room-advance.  
+EXPECTED_INTERACTION: Each new combat map (including Boss Rush rooms and rest→overworld returns that regenerate a map) advances the explore counter; Death Realm stays excluded.  
+ACTUAL_INTERACTION: Only the single main portal-generate path counts; Boss Rush / rest / white transitions are invisible to `explore_25_maps`.  
+SYSTEMS_AFFECTED: explore_25_maps, mapsVisited, Boss Rush, rest/white portals, victory feat snapshot  
+RECOMMENDED_ACTION: Extract `recordMapVisit({ countDeathRealm: false })` and call it from every non-death map publish that creates a new playable map (Boss Rush spawn/advance, rest exit back to overworld, white→sanctuary if product wants it). Keep Death Realm off the counter. Tests: BR room 0→1 increments; Death Realm load does not; rest entry policy documented. Do not change loot_10.  
+AUTONOMY: IMPLEMENT_HELPER_THEN_PORTAL_CALL_SITES  
+DEPENDENCIES: Distinct from 10-21-005; do not fold React-deps fix into this.  
+REGRESSION_RISK: LOW–MEDIUM — explore_25 unlocks sooner for run-heavy players.  
+VALIDATION_REQUIRED: Unit test on the helper; playtest Boss Rush two-room advance and Feats panel counter.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MIMA-2026-10-24-007  
+SOURCE_AUTOMATION: Mechanic Interaction Matrix Auditor  
+TITLE: Version-gate localStorage wipe drops `mapsVisited` / ground-doka counters so explore_25 and loot_10 progress reset  
+CATEGORY: achievements + persistence + versionGate  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `APP_VERSION` bump (`App.tsx` 298–317) `localStorage.clear()` then restores only keys `shouldPreserveVersionGateKey` allows (`versionGate.ts` 7–12): `pbv_tier_spawn_config`, `pbv_levelup_config`, `*_inventory`. Client feat counters live at `${userId}_slotN_pbv_maps_visited_count` and `…_pbv_ground_doka_pickups` (WX `6471–6477`, `11400–11407`) — not preserved. After reload the refs rehydrate from missing keys → 0 (`WX` 2193). Canister unlocks already granted stay, but a player at 24 maps / 9 ground pickups loses the unlock race and must re-farm. Distinct from unpaid-death races (09-25…09-28) and from 09-27-004 (`loot_10` claim-time / mapsVisited *gate* on claim). Tests: `versionGate.test.ts` only asserts inventory + admin configs survive.  
+EXPECTED_INTERACTION: Version wipe keeps paid inventory *and* client-only feat progress counters that are not canister-backed, or those counters move to the canister.  
+ACTUAL_INTERACTION: Inventory survives; explore_25 / loot_10 progress counters are erased every bump.  
+SYSTEMS_AFFECTED: versionGate, explore_25_maps, loot_10_doka, localStorage  
+RECOMMENDED_ACTION: Preserve keys ending `_pbv_maps_visited_count` / `_pbv_ground_doka_pickups` (and the unscoped fallbacks) in `shouldPreserveVersionGateKey`, **or** persist those counters on the profile. Do not preserve `pbv_pending_death_penalty_*` here without an unpaid-death design pass. Tests: version wipe restores a seeded mapsVisited=24 key.  
+AUTONOMY: IMPLEMENT_VERSION_GATE_PRESERVE  
+DEPENDENCIES: None. Do not clone unpaid-death honour filings.  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: `versionGate.test.ts` fixture; manual bump APP_VERSION with seeded counters.  
 STATUS: NEW  
