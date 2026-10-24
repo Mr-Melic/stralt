@@ -29,8 +29,13 @@ See `ACTION_IDS_SDEG_2026-10-24.md`. Summary:
 | SDEG-2026-10-24-013 | Spell level/bar localStorage keyed by display-name userId | Medium empty-keys hydrate |
 | SDEG-2026-10-24-014 | Enemy hard-delete; ghost spellLevelKeys after catalog purge | Medium rename/retire |
 | SDEG-2026-10-24-015 | purchaseBuff without occupied character slot | Low official / med raw |
+| SDEG-2026-10-24-016 | WX JSON.stringify of getBossRushConfig Text double-encodes `pbv_boss_rush_config` | Low today / high if a later client reads the wrapped blob |
+| SDEG-2026-10-24-017 | Legacy `pbv_active_spells` copy overwrites a newer namespaced spell bar | High first replay while both keys exist |
+| SDEG-2026-10-24-018 | Region and map-modifier catalogs hard-delete; Character stores none of those ids | Low today / high if required Character fields ship |
+| SDEG-2026-10-24-019 | Color palette blob is not a mandatory gameplay persist dependency | Low today / high if palette becomes required |
 
-Helpers (this pass): `bossConfigPersist.ts`, `summonUnitDefPersist.ts`, `bossRushSlotClear.ts`, `challengeBadgePersist.ts`, `slotLocalProgressKeys.ts`, `catalogDeletePolicy.ts` (+ tests). No forbidden-file edits.
+Helpers (001–015 pass): `bossConfigPersist.ts`, `summonUnitDefPersist.ts`, `bossRushSlotClear.ts`, `challengeBadgePersist.ts`, `slotLocalProgressKeys.ts`, `catalogDeletePolicy.ts` (+ tests).  
+Helpers (016–019 pass): `bossRushConfigLocalCache.ts`, `legacyActiveSpellsMigrate.ts`, `configCatalogHardDelete.ts`, `colorPaletteGameplayDependency.ts` (+ tests). No forbidden-file edits. No persist-schema / EOP chain change.
 
 Still open (not NEW; vehicles exist): victory HP floor vs linear cap (#386); unpaid-death owner key (#385/#508/#667); BuffShop canister wire (#408/#490); complete(9) ordering (#803 landed).
 
@@ -52,19 +57,20 @@ Still open (not NEW; vehicles exist): victory HP floor vs linear cap (#386); unp
 
 | Owner | Effect |
 | :--- | :--- |
-| Yesterday | Shared wallet death tax; display-name spell/maps keys; boss drafts local-only |
-| Six months | High-level Number cut (001); ghost OLD_SPELL keys still on bar ownership |
-| Pre-feature | Optional Character fields null OK; challenge badges never stored |
-| Renamed/retired | Enemy hard-delete orphans; no alias map; ghost spellLevelKeys after purge |
+| Yesterday | Shared wallet death tax; display-name spell/maps keys; boss drafts local-only; WX Boss Rush cache double-encoded (016, unread) |
+| Six months | High-level Number cut (001); ghost OLD_SPELL keys still on bar ownership; stale global `pbv_active_spells` can clobber namespaced bar once (017) |
+| Pre-feature | Optional Character fields null OK; challenge badges never stored; no region/modifier ids on Character (018); palette blob not required (019) |
+| Renamed/retired | Enemy hard-delete orphans; region/modifier hard-delete (018); no alias map; ghost spellLevelKeys after purge |
 | Slot delete + recreate | Inherits mapsVisited / spell_levels / active_spells localStorage + achievement/buff maps; Boss Rush full-clear only if canister remove ran |
 | Admin summons | Kit/ap/mp lost on round-trip (009); starter pieceType kits still work from spellData |
 | Raw client | Boss Rush walk-to-master (011); purchaseBuff into empty slot (015) |
+| Visuals | Palette / sprite URL delete cannot unload a Character today (019; known pixel-fallback) |
 
 ## Helper-only without forbidden files?
 
 | Finding | Helper+tests only? |
 | :--- | :--- |
-| 008–015 | Yes for lock/docs; wiring needs WX / main.mo / BuffShop / vehicles listed above |
+| 008–019 | Yes for lock/docs; wiring needs WX / main.mo / BuffShop / vehicles listed above |
 | Sprite URLs required | No new bug — enemy/player spriteUrl optional (`adminGuard.mo` 282–290, 312–328); ads require https (not player persist) |
 | saveActiveSpells / dual Nat | Still do not wire (known 10-23-004); no new helper |
 | changelog / GameKey wrap | Known; unchanged |

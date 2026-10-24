@@ -271,3 +271,75 @@ MIGRATION_REQUIREMENT: None
 REGRESSION_RISK: LOW official; MEDIUM raw-client pre-stock  
 VALIDATION_REQUIRED: Policy helper false; future Motoko rejects empty slot.  
 STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-10-24-016  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: WX JSON.stringify of getBossRushConfig Text double-encodes pbv_boss_rush_config  
+CATEGORY: config-ref / cache  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Motoko `getBossRushConfig` returns `Text` (`main.mo` 1836). Official play parses that Text once (`useBossRush.ts` 238–244). WX mount still writes `localStorage.setItem("pbv_boss_rush_config", JSON.stringify(brcfg))` (`WorldExploration.tsx` 946–948 — cite only; do not edit). Palette next door stores `typeof palette === "string" ? palette : JSON.stringify(palette)` (936–941); Boss Rush always stringifies, so a JSON object Text becomes `'"{\\"rewardMultiplier\\":1}"'`. Admin drafts use a different key (`bossRushConfig`, `AdminDashboard.tsx` 5432). Neither key is in the version-gate keep-list. Official play does not read the WX key today (repo grep: only the WX write). Distinct from 008 (`pbv_boss_configs` encounter drafts vs canister BossConfig) and 10-23-003 (bigint `getTierSpawnConfig`). Helper: `bossRushConfigLocalCache.ts`.  
+SYSTEMS_AFFECTED: Boss Rush rewardMultiplier cache; admin vs play keys; APP_VERSION wipe  
+RECOMMENDED_ACTION: Keep helper. Wire `serializeBossRushConfigForLocalCache` / `parseBossRushConfigCache` from a later WX vehicle — do not hydrate encounters or rewards from the WX cache while official parse-once remains live. Do not edit WorldExploration / AdminDashboard this run.  
+AUTONOMY: HELPER  
+DEPENDENCIES: None  
+MIGRATION_REQUIREMENT: None (client cache only). If a later client reads the WX key, parse-once-or-double-encoded.  
+REGRESSION_RISK: LOW while official ignores the key; HIGH if a future client JSON.parse-once the wrapped blob and treats rewardMultiplier as undefined  
+VALIDATION_REQUIRED: JSON.stringify(canisterText) double-encodes; parseBossRushConfigCache recovers both shapes; WX key ≠ admin key.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-10-24-017  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Legacy pbv_active_spells copy overwrites a newer namespaced spell bar  
+CATEGORY: spell discovery / destructive client migrate  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: WX useState initializer (`WorldExploration.tsx` 2712–2722 — cite only) reads `${userId}_slot${slot}_pbv_active_spells`, then if global `pbv_active_spells` exists **always** `setItem(namespaced, legacySaved)` and `removeItem(global)`. That is not “copy only if missing”: a six-month-old global bar clobbers a current namespaced bar on the next mount, then deletes the global so the overwrite cannot be undone. Replay after delete is a no-op only because the source is gone — first replay is the destructive one. Distinct from 013 (display-name `userId` key identity) and 10-23-004 / 10-22-003 (Nat `activeSpells` vs Text `spellBarOrder`; empty canister *levels* fallback). Canister `spellBarOrder` still hydrates after mount; the local bar is the first paint and the empty-keys fallback. Helper: `legacyActiveSpellsMigrate.ts`.  
+SYSTEMS_AFFECTED: spell bar cache; owned spell IDs on first paint; empty-keys hydrate  
+RECOMMENDED_ACTION: Helper `shouldCopyLegacyActiveSpells` copies only when namespaced is empty. Wire via #400/#388 — do not edit WorldExploration this run.  
+AUTONOMY: HELPER  
+DEPENDENCIES: #388 #400 #490  
+MIGRATION_REQUIREMENT: None (client migrate must be idempotent: copy-if-missing, then delete global)  
+REGRESSION_RISK: HIGH for a player with both keys (stale global wins once); LOW after global is gone  
+VALIDATION_REQUIRED: namespaced + legacy both set → shouldCopy false and wouldOverwrite true; namespaced empty → copy true; second pass with legacy gone is no-op.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-10-24-018  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Region and map-modifier catalogs hard-delete; Character stores none of those ids  
+CATEGORY: rename / retired IDs / schema gate  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `adminDeleteRegionConfig` is `regionConfigs.remove` (`main.mo` 826–832). `adminDeleteMapModifier` is `mapModifierConfigs.remove` (923–929). No alias table, no reference check. Character persists `spellLevelKeys` / `spellBarOrder` (spell ids) but no region or modifier id (`main.mo` 122–145). Live maps/region effects are session / query. 014 already covers enemy hard-delete + ghost `spellLevelKeys`; this locks the other two hard-delete catalogs so a later required Character field would make yesterday / six-month / pre-feature / renamed-id cohorts unloadable. Spell/achievement deletes still retire when referenced (known). Helper: `configCatalogHardDelete.ts`.  
+SYSTEMS_AFFECTED: regionConfigs; mapModifierConfigs; future Character schema  
+RECOMMENDED_ACTION: Helper landed. Do not add required Character region/modifier/enemy id fields until a later chain file after `20260901` with aliases. Retire-or-remap before hard-delete if those ids ever persist. No main.mo this run.  
+AUTONOMY: HELPER  
+DEPENDENCIES: Do not edit main.mo while persist queue open  
+MIGRATION_REQUIREMENT: YES before any required Character catalog-id field (later file + alias map)  
+REGRESSION_RISK: LOW today (ids not on Character); HIGH if a required field ships without aliases  
+VALIDATION_REQUIRED: hard-delete true for enemy/region/mapModifier, false for spell; Character stores spell ids only; persistingCatalogIdWouldBreakOldPlayers true for the three hard-delete kinds.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-10-24-019  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Color palette blob is not a mandatory gameplay persist dependency  
+CATEGORY: visual / persist dep  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Admin palettes are canister JSON Text plus `pbv_color_palette` / legacy `paperVertexPalette` (`AdminDashboard.tsx` 4702–4747; WX writes the canister blob at 936–941 — cite only). Combat / portrait draw uses `Character.colors` hex on the record (`main.mo` 129–130) and `pieceType` → pixel pattern (known 10-21-003: stored `pixelPattern` unused). Palette keys are not in the version-gate keep-list. Deleting or deactivating a custom palette therefore cannot corrupt a Character today. Promoting the blob (or an uploaded sprite URL) to a required look would make yesterday / six-month / pre-palette / wipe cohorts unloadable. Distinct from 10-21-003 (pixelPattern vs pieceType) and `adminDeletePlayerSpriteConfig` pixel-fallback (854–860). Helper: `colorPaletteGameplayDependency.ts`.  
+SYSTEMS_AFFECTED: colorPalette store; Character.colors; pieceType art  
+RECOMMENDED_ACTION: Keep helper lock. Never make owner-uploaded visuals or palette keys required on Character. Sprite URLs stay optional. Do not add palette ids to persist without a later migration after `20260901` and a missing-asset fallback.  
+AUTONOMY: HELPER  
+DEPENDENCIES: None  
+MIGRATION_REQUIREMENT: YES only if palette/sprite ids become required Character fields  
+REGRESSION_RISK: LOW today; HIGH if a future client requires the blob to load a champion  
+VALIDATION_REQUIRED: deletingColorPaletteCorruptsCharacter false; combatDrawReadsColorPaletteLocalStorage false; Character.colors remain hex on the record.  
+STATUS: NEW  
