@@ -9,6 +9,9 @@ import {
   ENEMY_SUMMONER_CHANCE_BASE,
   ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE,
   ENEMY_SUMMON_CAP,
+  MAP_MODIFIER_ARCANE_OVERFLOW_AP_DISCOUNT,
+  MAP_MODIFIER_ARCANE_SURGE_AP_DISCOUNT,
+  MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT,
   MAX_ENEMIES,
   PLAYER_BASE_AP,
   PLAYER_BASE_MP,
@@ -17,6 +20,7 @@ import {
   WORLD_GRID_SIZE,
 } from "../data/gameConstants.ts";
 import { starterSpells } from "../data/spellData.ts";
+import { playerTurnStartModifierTarget } from "../engine/battleSetup.ts";
 import {
   calcScaledDamage,
   computeAITier,
@@ -1141,6 +1145,165 @@ export function firstPlayerLevelSummonResCanHit100(): number | null {
   return firstLevelResCanHit100("king");
 }
 
+/** Live Mending Mist (`mapModifiers.ts`): `floor(maxHp * 0.05)` on turn-start. */
+export const MENDING_MIST_REGEN_FRACTION =
+  MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT;
+
+export function mendingMistRegen(maxHp: number): number {
+  return Math.floor(Math.max(0, maxHp) * MENDING_MIST_REGEN_FRACTION);
+}
+
+export function mendingMistRegenAtPlayerLevel(level: number): number {
+  return mendingMistRegen(linearPlayerMaxHp(level));
+}
+
+/**
+ * Live player turn-start looks up `id === "player"` inside `combatantsRef`
+ * (`playerTurnStartModifierTarget`). The player is not in that store, so the
+ * hook is skipped. Plague / Void Rift have separate `characterStats` writes;
+ * Mending Mist does not.
+ */
+export function playerCombatantsRefHasPlayerEntry(
+  combatants: Array<{ id?: string }>,
+): boolean {
+  return playerTurnStartModifierTarget(combatants) !== undefined;
+}
+
+export const PLAYER_TURN_START_COMMITS_MENDING_MIST = false;
+export const ENEMY_TURN_START_COMMITS_MENDING_MIST_TO_STORE = false;
+
+/** First player level whose Mist regen exceeds a raw damage number. */
+export function firstPlayerLevelMistRegenExceeds(
+  damage: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(0, damage);
+  for (let level = 1; level <= limit; level++) {
+    if (mendingMistRegenAtPlayerLevel(level) > need) return level;
+  }
+  return null;
+}
+
+/** Catalog Sacrifice (`spell-sacrifice`): lose 20% current HP, deal 3× that. */
+export const SACRIFICE_HP_FRACTION = 0.2;
+export const SACRIFICE_DAMAGE_MULT = 3;
+export const SACRIFICE_ID = "spell-sacrifice";
+
+export function starterSacrificeApCost(): number {
+  return catalogApCost(SACRIFICE_ID);
+}
+
+export function starterSacrificeCooldownTurns(): number {
+  return catalogCooldownTurns(SACRIFICE_ID);
+}
+
+export function starterSacrificeIsPhysical(): boolean {
+  return starterSpellById(SACRIFICE_ID)?.isPhysical === true;
+}
+
+export function sacrificeHpLoss(currentHp: number): number {
+  return Math.floor(Math.max(0, currentHp) * SACRIFICE_HP_FRACTION);
+}
+
+export function sacrificeRawDamage(currentHp: number): number {
+  return sacrificeHpLoss(currentHp) * SACRIFICE_DAMAGE_MULT;
+}
+
+export function sacrificeRawAtFullHp(level: number): number {
+  return sacrificeRawDamage(linearPlayerMaxHp(level));
+}
+
+/** `enemyTakesDamage` applies RES once, then chips at least 1. */
+export function sacrificeDamageAfterEnemyRes(
+  raw: number,
+  enemyRes: number,
+): number {
+  return Math.max(1, Math.round(raw * Math.max(0, 1 - enemyRes / 100)));
+}
+
+export function firstPlayerLevelSacrificeRawExceeds(
+  hp: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(0, hp);
+  for (let level = 1; level <= limit; level++) {
+    if (sacrificeRawAtFullHp(level) >= need) return level;
+  }
+  return null;
+}
+
+/**
+ * Live Arcane Surge (`mapModifiers.ts` onApCost): `max(1, base - 1)`.
+ * Wired at cast via `mapModifierRegistry.applyApCost`.
+ */
+export const ARCANE_SURGE_AP_DISCOUNT = MAP_MODIFIER_ARCANE_SURGE_AP_DISCOUNT;
+
+export function arcaneSurgeApCost(baseCost: number): number {
+  return Math.max(
+    1,
+    Math.floor(Number(baseCost) || 0) - ARCANE_SURGE_AP_DISCOUNT,
+  );
+}
+
+export function playerFrostCastsPerTurnWithArcaneSurge(ap: number): number {
+  const cost = arcaneSurgeApCost(FROST_AP_COST);
+  return Math.max(0, Math.floor(Math.max(0, ap) / cost));
+}
+
+export function frostCastsWithTimestepAndArcaneSurge(ap: number): number {
+  return playerFrostCastsPerTurnWithArcaneSurge(ap) * 2;
+}
+
+export function firstLevelArcaneSurgeFrostCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (playerFrostCastsPerTurnWithArcaneSurge(formulaAp(level)) >= need) {
+      return level;
+    }
+  }
+  return null;
+}
+
+/**
+ * Two-roll maps can pair `arcane_surge` with `arcane_overflow`. Both hooks
+ * are `max(1, cost - 1)` and `applyApCost` chains them in registry order
+ * (`mapModifiers.cost.test.ts`). Frost 3 → 1.
+ */
+export const ARCANE_OVERFLOW_AP_DISCOUNT =
+  MAP_MODIFIER_ARCANE_OVERFLOW_AP_DISCOUNT;
+
+export function stackedArcaneDiscountApCost(baseCost: number): number {
+  let cost = Math.floor(Number(baseCost) || 0);
+  cost = Math.max(1, cost - ARCANE_SURGE_AP_DISCOUNT);
+  cost = Math.max(1, cost - ARCANE_OVERFLOW_AP_DISCOUNT);
+  return cost;
+}
+
+export function playerFrostCastsPerTurnWithStackedArcane(ap: number): number {
+  const cost = stackedArcaneDiscountApCost(FROST_AP_COST);
+  return Math.max(0, Math.floor(Math.max(0, ap) / cost));
+}
+
+export function frostCastsWithTimestepAndStackedArcane(ap: number): number {
+  return playerFrostCastsPerTurnWithStackedArcane(ap) * 2;
+}
+
+export function firstLevelStackedArcaneFrostCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (playerFrostCastsPerTurnWithStackedArcane(formulaAp(level)) >= need) {
+      return level;
+    }
+  }
+  return null;
+}
+
 /** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
 export const HAZARD_LAVA_MIN = 8;
 export const HAZARD_LAVA_MAX = 15;
@@ -1521,7 +1684,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-10-23T00:20:00.000Z",
+    generatedAt: "2026-10-24T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -2200,6 +2363,97 @@ export function runLongHorizonSim() {
       summonMaxInitAt2500: playerSummonStatBounds(2500).init.max,
       summonMaxResAt107: playerSummonStatBounds(107).res.max,
       capPackKingMaxInitAt1000: enemyStatBounds(1000, "king").init.max,
+    },
+    mendingMistDeadHook: {
+      regenFraction: MENDING_MIST_REGEN_FRACTION,
+      playerTurnStartCommitsHp: PLAYER_TURN_START_COMMITS_MENDING_MIST,
+      enemyTurnStartCommitsStoreHp:
+        ENEMY_TURN_START_COMMITS_MENDING_MIST_TO_STORE,
+      playerAbsentFromCombatantsRef: !playerCombatantsRefHasPlayerEntry([
+        { id: "rat-1" },
+      ]),
+      regenAt1: mendingMistRegenAtPlayerLevel(1),
+      regenAt1000: mendingMistRegenAtPlayerLevel(1000),
+      regenAt100000: mendingMistRegenAtPlayerLevel(100_000),
+      unenragedCrushRecvAt1020: damageAfterPlayerResPasses(
+        fallbackCrushRaw(1020),
+      ),
+      enragedCrushRecvAt1020: damageAfterPlayerResPasses(
+        fallbackCrushRawEnraged(1020),
+      ),
+      firstPlayerLevelRegenExceedsUnenraged1020Crush:
+        firstPlayerLevelMistRegenExceeds(
+          damageAfterPlayerResPasses(fallbackCrushRaw(1020)),
+        ),
+      firstPlayerLevelRegenExceedsEnraged1020Crush:
+        firstPlayerLevelMistRegenExceeds(
+          damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+        ),
+    },
+    sacrificeHpScaling: {
+      id: SACRIFICE_ID,
+      hpFraction: SACRIFICE_HP_FRACTION,
+      damageMult: SACRIFICE_DAMAGE_MULT,
+      apCost: starterSacrificeApCost(),
+      cooldownTurns: starterSacrificeCooldownTurns(),
+      catalogIsPhysical: starterSacrificeIsPhysical(),
+      dealDamageAppliesEnemyResOnce: true,
+      rawAt1: sacrificeRawAtFullHp(1),
+      rawAt10: sacrificeRawAtFullHp(10),
+      rawAt855: sacrificeRawAtFullHp(855),
+      rawAt1000: sacrificeRawAtFullHp(1000),
+      rawAt100000: sacrificeRawAtFullHp(100_000),
+      frostRawAt0: playerFrostRaw(0),
+      exceedsFrostAtCreate: sacrificeRawAtFullHp(1) > playerFrostRaw(0),
+      dungeonCapHp: linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      firstPlayerLevelRawOneShotsDungeonCap:
+        firstPlayerLevelSacrificeRawExceeds(
+          linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+        ),
+      chip1AtRes100: sacrificeDamageAfterEnemyRes(
+        sacrificeRawAtFullHp(855),
+        100,
+      ),
+      rookRes100At: firstLevelResCanHit100("rook"),
+      rawOneShotIsAfterRookRes100: true,
+    },
+    arcaneSurgeFrostDump: {
+      apDiscount: ARCANE_SURGE_AP_DISCOUNT,
+      frostCostAfterSurge: arcaneSurgeApCost(FROST_AP_COST),
+      minCost: 1,
+      timestepCostAfterSurge: arcaneSurgeApCost(starterTimestepApCost()),
+      formulaCastsAt325: playerFrostCastsPerTurnWithArcaneSurge(formulaAp(325)),
+      formulaCastsAt100000: playerFrostCastsPerTurnWithArcaneSurge(
+        formulaAp(100_000),
+      ),
+      timestepCastsAt325: frostCastsWithTimestepAndArcaneSurge(formulaAp(325)),
+      timestepCastsAt100000: frostCastsWithTimestepAndArcaneSurge(
+        formulaAp(100_000),
+      ),
+      firstLevel100FormulaCasts: firstLevelArcaneSurgeFrostCastsAtLeast(100),
+      firstLevel100TimestepCasts: firstLevelArcaneSurgeFrostCastsAtLeast(50),
+    },
+    stackedArcaneFrostDump: {
+      overflowApDiscount: ARCANE_OVERFLOW_AP_DISCOUNT,
+      frostCostAfterStack: stackedArcaneDiscountApCost(FROST_AP_COST),
+      timestepCostAfterStack: stackedArcaneDiscountApCost(
+        starterTimestepApCost(),
+      ),
+      twoRollCanPairSurgeAndOverflow: true,
+      formulaCastsAt325: playerFrostCastsPerTurnWithStackedArcane(
+        formulaAp(325),
+      ),
+      formulaCastsAt100000: playerFrostCastsPerTurnWithStackedArcane(
+        formulaAp(100_000),
+      ),
+      timestepCastsAt325: frostCastsWithTimestepAndStackedArcane(
+        formulaAp(325),
+      ),
+      timestepCastsAt100000: frostCastsWithTimestepAndStackedArcane(
+        formulaAp(100_000),
+      ),
+      firstLevel100FormulaCasts: firstLevelStackedArcaneFrostCastsAtLeast(100),
+      firstLevel100TimestepCasts: firstLevelStackedArcaneFrostCastsAtLeast(50),
     },
   };
 }

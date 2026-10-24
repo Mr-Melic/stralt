@@ -27,6 +27,7 @@ import {
   PLAYER_CREATE_RESILIENCE,
   PLAYER_CREATE_SR,
   PLAYER_SUMMON_CAP_LIVE,
+  PLAYER_TURN_START_COMMITS_MENDING_MIST,
   SHIELD_CHARM_ABSORB,
   SUMMON_ARCHER_HP_SCALE,
   SUMMON_BOMBER_HP_SCALE,
@@ -34,6 +35,7 @@ import {
   SUMMON_HUNTER_HP_SCALE,
   WORLD_BOSS_LEVEL_OFFSET,
   WORLD_BOSS_SPAWN_RES_CLAMP,
+  arcaneSurgeApCost,
   bossRushCombatHp,
   bossRushEnemyLevel,
   bossRushRoomDoka,
@@ -61,6 +63,7 @@ import {
   firstEnemyLevelOverlayApExceedsPlayerFormulaAp,
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
+  firstLevelArcaneSurgeFrostCastsAtLeast,
   firstLevelChcCanHit100,
   firstLevelFormulaApExceedsPersistCap,
   firstLevelFormulaFrostCastsAtLeast,
@@ -71,6 +74,7 @@ import {
   firstLevelResCanHit100,
   firstLevelSpellFailHitsZero,
   firstLevelSpellRangeHitsCap,
+  firstLevelStackedArcaneFrostCastsAtLeast,
   firstLevelTimestepFrostCastsAtLeast,
   firstPlayerLevelBossRushCrushOneShots,
   firstPlayerLevelBossRushHpExceedsCatalog,
@@ -78,7 +82,9 @@ import {
   firstPlayerLevelBossRushRoomDokaHitsClamp,
   firstPlayerLevelBossRushRoomXpHitsClamp,
   firstPlayerLevelDokaHealFromOneExceeds,
+  firstPlayerLevelMistRegenExceeds,
   firstPlayerLevelPotionBeatsFlatDokaHeal,
+  firstPlayerLevelSacrificeRawExceeds,
   firstPlayerLevelSummonMaxInitExceedsCreate,
   firstPlayerLevelSummonResCanHit100,
   firstPlayerLevelSurvivesCrushRecv,
@@ -96,27 +102,37 @@ import {
   kitCastRaw,
   kitForPieceName,
   kitForZoneInput,
+  linearEnemyMaxHp,
   linearPlayerMaxHp,
+  mendingMistRegenAtPlayerLevel,
   officialStackedXp,
   overlayEnemyAp,
   overlayEnemyAtk,
   overlayEnemyMp,
   overworldPickMaxLevel,
   passiveRegenSecondsToFull,
+  playerCombatantsRefHasPlayerEntry,
   playerFrostCastsPerTurn,
+  playerFrostCastsPerTurnWithArcaneSurge,
+  playerFrostCastsPerTurnWithStackedArcane,
   playerFrostRaw,
   playerFrostTurnsToKill,
   playerFrostTurnsToKillHp,
   playerSummonCastsPerTurn,
   playerSummonStatBounds,
   runLongHorizonSim,
+  sacrificeDamageAfterEnemyRes,
+  sacrificeRawAtFullHp,
   spawnPlaceholderDamage,
   spawnPlaceholderHp,
   spellFailChance,
   spellUpgradeCostBigInt,
+  stackedArcaneDiscountApCost,
   starterDireWolfApCost,
   starterDireWolfCooldownTurns,
   starterFrostCooldownTurns,
+  starterSacrificeApCost,
+  starterSacrificeCooldownTurns,
   starterTimestepApCost,
   starterTimestepCooldownTurns,
   starterTimestepIsOncePerBattle,
@@ -507,5 +523,54 @@ assert.equal(
   report.playerSummonDump.spawnUsesCharacterLevelForComputeEnemyStats,
   true,
 );
+
+assert.equal(PLAYER_TURN_START_COMMITS_MENDING_MIST, false);
+assert.equal(playerCombatantsRefHasPlayerEntry([{ id: "rat-1" }]), false);
+assert.equal(playerCombatantsRefHasPlayerEntry([{ id: "player" }]), true);
+assert.equal(mendingMistRegenAtPlayerLevel(1), 5);
+assert.equal(mendingMistRegenAtPlayerLevel(100_000), 25_004);
+assert.equal(
+  firstPlayerLevelMistRegenExceeds(
+    damageAfterPlayerResPasses(fallbackCrushRaw(1020)),
+  ),
+  7917,
+);
+assert.equal(report.mendingMistDeadHook.playerTurnStartCommitsHp, false);
+assert.equal(report.mendingMistDeadHook.regenAt100000, 25_004);
+
+assert.equal(starterSacrificeApCost(), 3);
+assert.equal(starterSacrificeCooldownTurns(), 0);
+assert.equal(sacrificeRawAtFullHp(1), 60);
+assert.ok(sacrificeRawAtFullHp(1) > playerFrostRaw(0));
+assert.equal(sacrificeDamageAfterEnemyRes(sacrificeRawAtFullHp(855), 100), 1);
+assert.equal(
+  firstPlayerLevelSacrificeRawExceeds(linearEnemyMaxHp(dungeonMaxEnemyLevel())),
+  855,
+);
+assert.equal(firstLevelResCanHit100("rook"), 78);
+assert.equal(report.sacrificeHpScaling.rawAt1, 60);
+assert.equal(report.sacrificeHpScaling.chip1AtRes100, 1);
+
+assert.equal(arcaneSurgeApCost(3), 2);
+assert.equal(arcaneSurgeApCost(0), 1);
+assert.equal(playerFrostCastsPerTurnWithArcaneSurge(formulaAp(325)), 10);
+assert.equal(playerFrostCastsPerTurnWithArcaneSurge(formulaAp(100_000)), 2004);
+assert.equal(firstLevelArcaneSurgeFrostCastsAtLeast(100), 4800);
+assert.equal(report.arcaneSurgeFrostDump.frostCostAfterSurge, 2);
+assert.equal(report.arcaneSurgeFrostDump.formulaCastsAt100000, 2004);
+assert.equal(report.arcaneSurgeFrostDump.firstLevel100TimestepCasts, 2300);
+
+assert.equal(stackedArcaneDiscountApCost(3), 1);
+assert.equal(stackedArcaneDiscountApCost(0), 1);
+assert.equal(playerFrostCastsPerTurnWithStackedArcane(formulaAp(325)), 21);
+assert.equal(
+  playerFrostCastsPerTurnWithStackedArcane(formulaAp(100_000)),
+  4008,
+);
+assert.equal(firstLevelStackedArcaneFrostCastsAtLeast(100), 2300);
+assert.equal(firstLevelStackedArcaneFrostCastsAtLeast(50), 1050);
+assert.equal(report.stackedArcaneFrostDump.frostCostAfterStack, 1);
+assert.equal(report.stackedArcaneFrostDump.formulaCastsAt100000, 4008);
+assert.equal(report.stackedArcaneFrostDump.firstLevel100TimestepCasts, 1050);
 
 console.log("longHorizonSim.test: ok");
