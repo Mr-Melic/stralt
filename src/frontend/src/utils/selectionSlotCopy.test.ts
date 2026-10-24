@@ -5,14 +5,9 @@ import {
   SELECTION_HEADLINE,
   SELECTION_SUBCOPY,
   SLOT_HEADER,
-} from "./characterSelectionCopy.ts";
+} from "./selectionSlotCopy.ts";
 
-/**
- * Unit tests for the unwired characterSelectionCopy module.
- * Host-wiring sniff tests live in characterSelectionCopy.test.ts (union with
- * open PR #421 — same path / same suite as that PR).
- */
-describe("characterSelectionCopy module", () => {
+describe("selectionSlotCopy", () => {
   it("slot header uses a real glyph, not a raw \\u escape", () => {
     assert.equal(SLOT_HEADER(1), "⚔ Slot 1");
     assert.equal(/\\u2694/.test(SLOT_HEADER(2)), false);

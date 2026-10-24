@@ -29,11 +29,11 @@ TITLE: Slot header and loading show raw \u escapes
 CATEGORY: character-selection
 PRIORITY: P1
 CONFIDENCE: HIGH
-FILES_OR_SYSTEMS: src/frontend/src/components/CharacterSelection.tsx:486,889; src/frontend/src/utils/characterSelectionCopy.ts
+FILES_OR_SYSTEMS: src/frontend/src/components/CharacterSelection.tsx:486,889; src/frontend/src/utils/selectionSlotCopy.ts
 CURRENT_BEHAVIOUR: JSX text nodes keep source escapes, so the card title renders as the characters "\u2694 Slot N" and loading as "Loading character slots\u2026".
 DESIRED_BEHAVIOUR: Real ⚔ / … glyphs via JS strings or unicode characters.
 EVIDENCE: CharacterSelection.tsx 486 `\u2694 Slot {slotNumber}` and 889 `Loading character slots\u2026` are JSXText, not `"\u…"` string literals (piece icons at 613–618 correctly use JS strings).
-RECOMMENDED_ACTION: Wire characterSelectionCopy SLOT_HEADER / LOADING_SLOTS (HUMAN — CharacterSelection.tsx forbidden this run).
+RECOMMENDED_ACTION: Wire selectionSlotCopy SLOT_HEADER / LOADING_SLOTS (HUMAN — CharacterSelection.tsx forbidden this run). Module named to avoid colliding with open PR #421's characterSelectionCopy.test.ts.
 AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT (copy module + tests landed; not wired)
 REGRESSION_RISK: LOW
@@ -101,11 +101,11 @@ TITLE: Selection headline still says Paper Baby Vampire
 CATEGORY: character-selection
 PRIORITY: P2
 CONFIDENCE: HIGH
-FILES_OR_SYSTEMS: CharacterSelection.tsx:945; LandingPage ÆSTRALTØ; src/frontend/src/utils/characterSelectionCopy.ts
-CURRENT_BEHAVIOUR: "Choose your Paper Baby Vampire!" after landing branded ÆSTRALTØ. Distinct from tab-title ID (index.html / GameFlow wordmark).
+FILES_OR_SYSTEMS: CharacterSelection.tsx:945; LandingPage ÆSTRALTØ; src/frontend/src/utils/selectionSlotCopy.ts
+CURRENT_BEHAVIOUR: "Choose your Paper Baby Vampire!" after landing branded ÆSTRALTØ. Distinct from tab-title ID (index.html / GameFlow wordmark). Open PR #421 also wires "Choose your champion" into CharacterSelection — same desired copy; this module locks it without touching the forbidden host.
 DESIRED_BEHAVIOUR: "Choose your champion" (or ÆSTRALTØ-aligned headline).
 EVIDENCE: CharacterSelection.tsx 945; LandingPage title canvas "ÆSTRALTØ".
-RECOMMENDED_ACTION: Wire SELECTION_HEADLINE (HUMAN).
+RECOMMENDED_ACTION: Wire SELECTION_HEADLINE after #421, or subsume if #421 already landed the string (HUMAN).
 AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT (copy module; not wired)
 REGRESSION_RISK: LOW
@@ -207,7 +207,7 @@ STATUS: NEW
 
 | Module | IDs |
 | :--- | :--- |
-| `src/frontend/src/utils/characterSelectionCopy.ts` | UX-SELECT-SLOT-LITERAL-ESCAPE, UX-SELECT-PAPER-BABY-HEADLINE |
+| `src/frontend/src/utils/selectionSlotCopy.ts` | UX-SELECT-SLOT-LITERAL-ESCAPE, UX-SELECT-PAPER-BABY-HEADLINE |
 | `src/frontend/src/utils/profileNameCopy.ts` | UX-PROFILE-BOARD-NAME-MISLEAD, UX-ACCOUNT-VS-CHAMPION-NAME |
 | `src/frontend/src/utils/changelogDismissCopy.ts` | UX-CHANGELOG-PLAY-PREMATURE |
 | `src/frontend/src/utils/overworldVitalsCopy.ts` | UX-HEAL-RATIO-CRYPTIC, UX-OVERWORLD-AP-MP-IDLE |
