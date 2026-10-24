@@ -215,3 +215,223 @@ STATUS: NEW
 | `src/frontend/src/utils/portalTransitionCopy.ts` | UX-PORTAL-TRANSITION-OPAQUE |
 
 Do not bump `APP_VERSION` from this copy pass. Do not wire into forbidden hosts while older open PRs own them.
+
+---
+
+## Combat → rewards / death / boss pass (same day, second auditor)
+
+Focus: BattleUIPanel, SummonControlPanel, spells, PostBattleRecap, death, shops, upgrades, Boss Rush / dungeon portals.
+Do **not** re-report known list from the Game UX prompt (summon bar overlap, spellbook empty/cancel, boss guide level, potion battle-only, dual death modal, Death Realm wait, FAIL=0, potion vs HUD heal, covenant, recap feat precredit, level-up chrome, flee double confirm, Items inner Shop, zone tier lock).
+
+### Implemented this pass (display-only)
+
+```
+ACTION_ID: UX-SUMMON-NAME-PIECETYPE
+TITLE: Summon control bar shows title-cased piece name
+CATEGORY: combat
+PRIORITY: P3
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/SummonControlPanel.tsx; src/frontend/src/utils/summonDisplayName.ts
+CURRENT_BEHAVIOUR: WorldExploration passes summon.pieceType raw ("knight"); panel printed lowercase.
+DESIRED_BEHAVIOUR: Panel displays "Knight" (title case).
+EVIDENCE: WorldExploration.tsx ~18964; SummonControlPanel name span.
+RECOMMENDED_ACTION: Title-case in SummonControlPanel (done this pass).
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: Summon turn shows title-cased pieceType.
+STATUS: IMPLEMENTED_THIS_RUN
+```
+
+```
+ACTION_ID: UX-DEATH-XP-LEFTOVER-COPY
+TITLE: Death / flee XP penalty says leftover, not lifetime
+CATEGORY: death
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/utils/deathPenaltyCopy.ts (NEW, unwired); BattleUIPanel.tsx ~519–523; GameOverModal.tsx ~67; PostBattleRecap.tsx ~259
+CURRENT_BEHAVIOUR: Flee title/confirm and Game Over say "20% XP"; App tip correctly says leftover.
+DESIRED_BEHAVIOUR: All death surfaces say 20% leftover XP / 40% Doka (level kept).
+EVIDENCE: App.tsx tip vs BattleUIPanel flee string vs GameOverModal "20% penalty".
+RECOMMENDED_ACTION: Wire deathPenaltyCopy.ts when host files are free.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT (unwired copy module)
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: deathPenaltyCopy.test.ts
+STATUS: IMPLEMENTED_THIS_RUN (module only — not wired)
+```
+
+```
+ACTION_ID: UX-SPELL-AP-DISABLED-REASON
+TITLE: Champion spell hover names insufficient AP
+CATEGORY: combat
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/utils/spellSlotDisabledCopy.ts (NEW, unwired); BattleUIPanel.tsx ~623–649
+CURRENT_BEHAVIOUR: Slots disable only for empty / cooldown / overworld. AP-short spells stay selectable; SummonControlPanel already greys on AP.
+DESIRED_BEHAVIOUR: Title/aria names "Need N AP (have M)" when cost > current AP.
+EVIDENCE: BattleUIPanel disabled={isEmpty || isOnCooldown || !inBattle}; SummonControlPanel SpellSlot disabled={currentAp < spell.apCost}.
+RECOMMENDED_ACTION: Wire spellSlotDisabledCopy into BattleUIPanel when free.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT (unwired copy module)
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: spellSlotDisabledCopy.test.ts
+STATUS: IMPLEMENTED_THIS_RUN (module only — not wired)
+```
+
+```
+ACTION_ID: UX-ATTACK-NEAREST-WHY
+TITLE: Attack Nearest disabled title names the blocking reason
+CATEGORY: combat
+PRIORITY: P3
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/utils/attackNearestDisabledCopy.ts (NEW, unwired); BattleUIPanel.tsx ~835–843
+CURRENT_BEHAVIOUR: One generic string for all mid-battle fails (mode, spell, AP, CD, range/LoS).
+DESIRED_BEHAVIOUR: Distinct hover per gate.
+EVIDENCE: canAttackNearest composed in WorldExploration ~18852–18896; BattleUIPanel title collapses to one line.
+RECOMMENDED_ACTION: Wire attackNearestDisabledCopy when BattleUIPanel is free.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT (unwired copy module)
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: attackNearestDisabledCopy.test.ts
+STATUS: IMPLEMENTED_THIS_RUN (module only — not wired)
+```
+
+```
+ACTION_ID: UX-BOSS-RUSH-ADVANCE-LABEL
+TITLE: Boss Rush progression portal nearby label + unlock beat
+CATEGORY: boss-progression
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/utils/bossRushPortalCopy.ts (NEW, unwired); WorldExploration.tsx ~7915–7941, ~13907–13911, ~17577–17598
+CURRENT_BEHAVIOUR: Dungeon portals get canvas nearby labels; Boss Rush unlock is battle-log only + pink Room N/10 chip. No "step here for Room N" near the progression portal.
+DESIRED_BEHAVIOUR: Nearby carved-stone label when unlocked ("Next — Room N/10").
+EVIDENCE: labelText only for dungeon color / dungeonChainActive; boss rush clear logs "portal hums to life" with no canvas label.
+RECOMMENDED_ACTION: Wire bossRushPortalCopy into the portal draw pass when WorldExploration is free.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT (unwired copy module)
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: bossRushPortalCopy.test.ts
+STATUS: IMPLEMENTED_THIS_RUN (module only — not wired)
+```
+
+```
+ACTION_ID: UX-SUMMON-UPGRADE-COST-COPY
+TITLE: Summon upgrade UI copy names the 10× advertise vs canister debit
+CATEGORY: upgrades
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/utils/summonUpgradeCostCopy.ts (NEW, unwired); SpellbookModal.tsx ~439–448, ~1157–1189; spellUpgrade.ts ~112–141
+CURRENT_BEHAVIOUR: UI shows 10× and gates canAfford on that; canister charges 1× (spellUpgradeUiSpend).
+DESIRED_BEHAVIOUR: Expanded upgrade row says summon upgrades advertise 10×; debit follows canister. Gate fix is separate (HUMAN).
+EVIDENCE: upgradeCost uses SUMMON_UPGRADE_COST_MULTIPLIER; spellUpgradeCanisterSpend divides by 10.
+RECOMMENDED_ACTION: Wire copy under summon Upgrade expand; do not change economics in this pass.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT (unwired copy module)
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: summonUpgradeCostCopy.test.ts
+STATUS: IMPLEMENTED_THIS_RUN (module only — not wired)
+```
+
+### Open — HUMAN / REPORT_ONLY (combat pass)
+
+```
+ACTION_ID: UX-SUMMON-UPGRADE-COST-GATE
+TITLE: Spellbook blocks summon upgrades the canister would accept
+CATEGORY: upgrades
+PRIORITY: P1
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: SpellbookModal.tsx ~1157; spellUpgrade.ts spellUpgradeCanisterSpend; gameConstants.ts SUMMON_UPGRADE_COST_MULTIPLIER
+CURRENT_BEHAVIOUR: canAfford = dokaBalance >= advertised 10× cost. Player with 50 Doka sees "Not enough Doka" for a level-0 summon upgrade the canister would charge 10 for.
+DESIRED_BEHAVIOUR: Gate affordability on canister spend (or charge 10× for real). Shown cost and wallet debit must agree.
+EVIDENCE: upgradeCost → 100 at level 0; persistSpellUpgrade / upgradeSpell charges spellLevelingBaseCost * 2^level (10).
+RECOMMENDED_ACTION: HUMAN — align SpellbookModal canAfford with spellUpgradeCanisterSpend (or raise canister price). SpellbookModal currently stack-locked.
+AUTONOMY:
+- HUMAN
+REGRESSION_RISK: MEDIUM
+VALIDATION_REQUIRED: Summon upgrade with mid-wallet; wallet delta matches button.
+STATUS: NEW
+```
+
+```
+ACTION_ID: UX-SUMMON-PHASE-YOUR-TURN
+TITLE: Summon turn still labels phase YOUR / YOUR TURN
+CATEGORY: combat
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: BattleUIPanel.tsx ~371–381, ~571–592
+CURRENT_BEHAVIOUR: isSummonControlled shows "Summon's Turn" while phase chip still says YOUR and trailing label YOUR TURN. Distinct from bar overlap (UX-SUMMON-BAR-OVERLAP).
+DESIRED_BEHAVIOUR: Phase + trailing label say SUMMON (or summon name) while controlled.
+EVIDENCE: battlePhase stays "player" during control mode; Summon's Turn is additive only.
+RECOMMENDED_ACTION: HUMAN — BattleUIPanel phase strings branch on isSummonControlled.
+AUTONOMY:
+- HUMAN
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: Summon turn: no "YOUR TURN" on champion chrome.
+STATUS: NEW
+```
+
+```
+ACTION_ID: UX-INSPECT-SUMMON-AS-ENEMY
+TITLE: Inspect labels player summons as Enemy
+CATEGORY: combat
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: StatPopup.tsx ~126–127
+CURRENT_BEHAVIOUR: Any non-id==="player" unit gets "· Enemy", including player-side summons.
+DESIRED_BEHAVIOUR: Player summons show "· Ally" / "· Summon"; hostiles stay Enemy.
+EVIDENCE: StatPopup subtitle ternary; CombatantEntry has side / isSummon.
+RECOMMENDED_ACTION: HUMAN — StatPopup stack-locked; pass side/isSummon into subtitle.
+AUTONOMY:
+- HUMAN
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: Inspect ally summon ≠ Enemy.
+STATUS: NEW
+```
+
+```
+ACTION_ID: UX-BOSS-RUSH-HUD-CHROME
+TITLE: Boss Rush Room chip is pink SaaS pill, not carved stone
+CATEGORY: boss-progression
+PRIORITY: P3
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: WorldExploration.tsx ~17577–17598
+CURRENT_BEHAVIOUR: Hot-pink rounded-full monospace chip under the top HUD.
+DESIRED_BEHAVIOUR: DESIGN.md stone/gold/crimson chip (match Dungeon depth badge).
+EVIDENCE: background rgba(180,0,120,0.85); border #FF69B4; fontFamily monospace.
+RECOMMENDED_ACTION: HUMAN — WorldExploration stack-locked; restyle when free.
+AUTONOMY:
+- HUMAN
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: Visual match to dungeon chain chip language.
+STATUS: NEW
+```
+
+```
+ACTION_ID: UX-RECAP-DEFEAT-XP-BASIS
+TITLE: Defeat recap XP loss omits leftover / 20% basis
+CATEGORY: death
+PRIORITY: P3
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: PostBattleRecap.tsx ~259; deathPenaltyCopy.ts
+CURRENT_BEHAVIOUR: Shows "-N XP" with level only; no "20% leftover" line (Game Over has percent but still not leftover).
+DESIRED_BEHAVIOUR: Subline "20% of leftover XP this level" next to the loss amount.
+EVIDENCE: PostBattleRecap defeat XP block vs App tip / deathPenaltyCopy.
+RECOMMENDED_ACTION: Wire deathPenaltyCopy.defeatXpBasis when PostBattleRecap is free.
+AUTONOMY:
+- REPORT_ONLY (same copy module as UX-DEATH-XP-LEFTOVER-COPY; PostBattleRecap locked)
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: Lava defeat recap shows leftover basis.
+STATUS: NEW
+```
+
+### Auto-landed this combat pass (unwired except summon name)
+
+| Module | IDs |
+| :--- | :--- |
+| `src/frontend/src/utils/summonDisplayName.ts` (+ SummonControlPanel wire) | UX-SUMMON-NAME-PIECETYPE |
+| `src/frontend/src/utils/deathPenaltyCopy.ts` | UX-DEATH-XP-LEFTOVER-COPY, UX-RECAP-DEFEAT-XP-BASIS |
+| `src/frontend/src/utils/spellSlotDisabledCopy.ts` | UX-SPELL-AP-DISABLED-REASON |
+| `src/frontend/src/utils/attackNearestDisabledCopy.ts` | UX-ATTACK-NEAREST-WHY |
+| `src/frontend/src/utils/bossRushPortalCopy.ts` | UX-BOSS-RUSH-ADVANCE-LABEL |
+| `src/frontend/src/utils/summonUpgradeCostCopy.ts` | UX-SUMMON-UPGRADE-COST-COPY (gate is HUMAN) |
