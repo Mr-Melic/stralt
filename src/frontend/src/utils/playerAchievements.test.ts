@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import {
+  KNOWN_ACHIEVEMENT_CONDITIONS,
+  knownAchievementCondition,
+} from "./adminSafety.ts";
+import {
   fetchPlayerAchievements,
   mapPlayerAchievements,
 } from "./playerAchievements.ts";
@@ -56,5 +60,15 @@ assert.equal(mapped[0]?.achievementId, "first_blood");
 assert.equal(mapped[0]?.unlocked, true);
 assert.equal(mapped[0]?.unlockedAt, 42);
 assert.equal(mapped[0]?.claimed, false);
+
+assert.equal(
+  knownAchievementCondition("boss_defeated_starved_pawn"),
+  false,
+  "AFDA-2026-10-24-042: victory boss_defeated_* is not a catalog condition",
+);
+assert.ok(
+  KNOWN_ACHIEVEMENT_CONDITIONS.every((c) => !c.startsWith("boss_defeated_")),
+  "admin Feats dropdown cannot create boss_defeated_* rows",
+);
 
 console.log("playerAchievements.test: ok");
