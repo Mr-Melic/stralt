@@ -1,15 +1,48 @@
 # Stralt Boss & Boss-Spell Discovery Design
 
 **Author:** Boss and Boss-Spell Designer (automation)  
-**Date:** 2026-10-23 (iterates 2026-10-22 Wave 15 / 2026-10-21 Wave 14 / 2026-09-29 Wave 13 / 2026-09-28 Wave 12 / 2026-09-27 Wave 11 / 2026-09-26 Wave 10 / 2026-09-25 Wave 9 / 2026-09-24 Wave 8 / 2026-09-23 Wave 7 / 2026-09-22 Wave 6 / 2026-09-21 Wave 5 / 2026-09-02 Wave 4 / 2026-09-01 Wave 3 / 2026-08-31 / #137)  
+**Date:** 2026-10-24 (iterates 2026-10-23 Wave 16 / 2026-10-22 Wave 15 / 2026-10-21 Wave 14 / 2026-09-29 Wave 13 / 2026-09-28 Wave 12 / 2026-09-27 Wave 11 / 2026-09-26 Wave 10 / 2026-09-25 Wave 9 / 2026-09-24 Wave 8 / 2026-09-23 Wave 7 / 2026-09-22 Wave 6 / 2026-09-21 Wave 5 / 2026-09-02 Wave 4 / 2026-09-01 Wave 3 / 2026-08-31 / #137)  
 **Status:** PROPOSED (design only — no production code in this change)  
-**Scope:** All 19 shipped bosses, Wave-2 through Wave-15 quartets, and Wave-16 quartet. Every special ability classified. Indefinite progression, no level cap.
+**Scope:** All 19 shipped bosses, Wave-2 through Wave-16 quartets, and Wave-17 quartet. Every special ability classified. Indefinite progression, no level cap.
 
 This document is the design contract for later implementation. It does **not** change combat math, the RAF loop, map generation, turn order, or any runtime module. Implementers must follow the constraints in §2 and the per-boss `STATUS: PROPOSED` sheets.
 
 ---
 
-## 0. Changelog — 2026-10-23 cron
+## 0. Changelog — 2026-10-24 cron
+
+`BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; open #753 holds Wave 12 + Table J; open #808 holds Wave 13 + Table K; open #836 holds Wave 14 + Table L; open #903 holds Wave 15 + Table M; open #951 holds Wave 16 + Table N; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 17 + Rush **Table O**.
+
+Live audit against `0f5363f` (`Merge pull request #332`) — same facts as §0.1–§0.13, re-read on 2026-10-24:
+
+| Fact | Still true |
+| :--- | :--- |
+| `getBossEffectiveStats` multiplies catalog HP by `1.08^diff` only | Slice A not implemented. Even-match HP is still 60–600. `progression.ts` 308–338. |
+| Final Pawn `phase2.statMultiplier: 999`, `summonCount: 11` | `bossDefaults.ts` 475–481 |
+| Rush room 9 `boss2Id: "weeping_pawn_2"` | Still not a `BossId`. Wave 3 remap to `second_lament` is still spec-only. `useBossRush.ts` 127. |
+| `pickBossKitSpell` first-off-cooldown | `useBossAI.ts` 38–54; decide fns still pass `new Map()` (e.g. 172) so cooldown is unused |
+| Backend `defaultBossConfigs()` stale 12-boss seed | `admin.mo` 350; still `fireball` / `cursed_gust` |
+| Frontend catalog forced innate | `WorldExploration.tsx` still maps every `starterSpells` row `isBaseSpell: true` (2400–2411). File is **19,213** lines. `adminSafety.ts` 711–719 is library-retire include, not a discovery path. |
+| `applyAttract` / `applyPushback` unused by casts | `occupancy.ts` 482 / 537; tests only. MIMA-2026-08-31-005 still OPEN (#336). |
+| Swap × hazards | `spellEngine.ts` 768 calls `swapPositions`; WX still copies coords only. MIMA-2026-08-31-001 still OPEN. |
+| Line targeting exists, unread by data | `targeting.ts` 580. `areaShape` still unread (Chebyshev `areaRadius`, 695–721). Fan Bolt’s cone wire is still unbuilt. Facing (`currentView`) still has no battle-walk writer — #411 fail-closed until that writer exists. |
+| Seeded feats | Still 15 in `defaultAchievements()` (`admin.mo` 309–326). No boss-discovery feats. |
+
+**This pass adds:**
+
+1. Union of Wave 5 (`ram_castellan`, `fosse_warden`, `stride_censor`, `morrow_herald`) + Table C from open #367, Wave 6 (`lock_marshal`, `bait_vicar`, `font_abbess`, `surplus_auditor`) + Table D from open #406, Wave 7 (`mill_seneschal`, `counter_chaplain`, `wedge_prior`, `levy_rector`) + Table E from open #474, Wave 8 (`gaze_beadle`, `span_chamberlain`, `cover_hospitaller`, `lintel_sacrist`) + Table F from open #518, Wave 9 (`toll_ostiary`, `hinge_precentor`, `veil_verger`, `oath_dean`) + Table G from open #572, Wave 10 (`crypt_sexton`, `march_prefect`, `aisle_canon`, `orbit_succentor`) + Table H from open #638, Wave 11 (`sole_thurifer`, `bias_prebendary`, `brick_cellarer`, `rebound_almoner`) + Table I from open #663, Wave 12 (`infirm_chanter`, `yoke_subchanter`, `salve_wicker`, `brand_curate`) + Table J from open #753, Wave 13 (`flush_psalmist`, `lone_lector`, `plate_bursar`, `lend_proctor`) + Table K from open #808, Wave 14 (`effigy_clerk`, `enter_deacon`, `split_acolyte`, `quiet_chorister`) + Table L from open #836, Wave 15 (`jostle_subdeacon`, `peel_friar`, `dilate_organist`, `hood_recluse`) + Table M from open #903, **and** Wave 16 (`wick_exorcist`, `dry_nuncio`, `hearth_legate`, `must_preceptor`) + Table N from open #951.
+2. Wave 17: `boot_subprior`, `purse_steward`, `tick_infirmarer`, `mute_notary`. Not in `BOSS_IDS`. Primary holes: **+1 current MP to an unmoved ally** (Spare Pace is +1 *now, no gate*; Gift Sill is cell *enter* +MP; Exit Boon is *leave*; Walk Toll is *+1 cost*; Haste is +2 MP *stat*; Leftover Lend / Cadence Lend dump leftover *AP*; Boot Lend adds 1 to an ally’s **current** MP iff `walkMpSpentThisTurn` is 0 — already walked = fizzle, AP spent; forced-move does **not** set the walk flag so a shoved ally can still receive it; cap at their max MP; never write max MP), **carry leftover AP to next turn start** (Timestep is full AP/MP *now*; Purse Cut / Empty Purse / Purse Lock are *their* economy; Leftover Lend dumps to an *ally now*; Late Purse *burns* leftover; Purse Keep is **self**, once/battle, 1 AP, snapshots leftover at **end of this turn**, pays `min(snapshot, 3)` at **next own turn start** — not a queue splice; leftover 0 still spends the once/battle for 0; Dry Sting still sees leftover > 0 this turn while armed), **next DoT tick on you is 0** (Cleanse / Dispel *strip* now; Thin Ward / Ward Plate / Morrow Plate eat *hits*; Tick Hood is W7 different; Far Hood eats a *direct* hit from Chebyshev ≥ 3, not DoT; Tick Plate arms a consume — the next DoT stack tick that would apply HP loss deals 0, then consume; a 0-tick still decrements that stack’s duration; other stacks on later ticks still land; consume in `dotStacks.ts`, not `dealDamage`), **their last resolved spell id is illegal for 1 turn** (Mute Thread fizzles the *next any* id; Once Verse is echo family; Oath Blade other ids fizzle while Strike *hurts*; Hex of Silence is a full-bar *lock*; Cast Hold cannot resolve a *spell* until they walk; Last Mute reads `lastResolvedSpellId` — last id that spent AP for them this battle — and that id is illegal for 1 of **their** turns; no last id = fizzle, AP spent; Strike is illegal **only if** `physical_attack` was that last id).
+3. Extra doors on remaining **#636** Boot Lend / Purse Keep / Tick Plate / Last Mute. **No new #137 spell ids.** Spectacular `CHOIR_BOOT` / `NAVE_KEEP` / `NAVE_TICK` / `CHOIR_MUTE` stay `BOSS_ONLY`. Court Hinge stays `NOT_PLAYER_LEARNABLE`. Court Stretch stays `NOT_PLAYER_LEARNABLE`. Quad Span stays off until occupy-weight exists. Remaining #636 (`spell-pair-slide`) stays off (force-move pair; MIMA-005). #695, #726, #787, and #849 stay off these sheets.
+4. Rush **Table O** (§10.14): four post-Table-N rooms. Does **not** rewrite rooms 0–9, Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, Table L, Table M, or Table N.
+5. Boot Lend / Tick Plate / Last Mute have **no** #636 stub. Purse Keep’s stub is `keep_bursar` — **not** remapped to `purse_steward`. Do **not** remap `shove_cantor` / `stretch_precentor` / `dummy_castellan` / `flush_precentor` / `gait_cantor` / `pair_usher` / `court_hinge_regent` / `span_quad` / `keep_bursar` / `court_stretch_regent`. First grant wins if a stub ever ships.
+
+Shipped + Wave-2–16 sheets remain `STATUS: PROPOSED`. Table B/C/D/E/F/G/H/I/J/K/L/M/N holds still apply. `rime_margrave` / `sinkhole_dowager` stay solo (MIMA-005).
+
+Do **not** extra-door leftover #563 id `spell-court-hinge` from these sheets. Court Hinge stays `NOT_PLAYER_LEARNABLE`. Do **not** extra-door remaining #636 Wave-9 tactical ids (`spell-quad-span`, `spell-pair-slide`, `spell-court-stretch`). Court Stretch stays `NOT_PLAYER_LEARNABLE`. Quad Span stays off until occupy-weight exists. Pair Slide waits (force-move pair; MIMA-005). Do **not** extra-door #695 Wave-10 tactical ids (`spell-both-mend` … `spell-court-keep`), #726 Wave-11 tactical ids (`spell-heave-mend` … `spell-court-dual`), #787 Wave-12 tactical ids (`spell-parched-mend` … `spell-court-imprint`), or #849 Wave-13 tactical ids (`spell-gaunt-mend` … `spell-court-lag`). Do **not** grant Spare Pace / Gift Sill / Leftover Lend / Cadence Lend / Haste-as-grant / Purse Cut / Empty Purse / Timestep-as-grant / Late Purse / Tick Hood / Ward Plate / Empty Plate / Morrow Plate / Cleanse / Mute Thread / Once Verse / Oath Blade / Hex of Silence from Boot / Purse / Tick / Mute. Do **not** restamp Gait Wick / Dry Sting / Home Step / Must Span as Wave-17-only doors.
+
+---
+
+## 0.1 Changelog — 2026-10-23 cron
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; open #753 holds Wave 12 + Table J; open #808 holds Wave 13 + Table K; open #836 holds Wave 14 + Table L; open #903 holds Wave 15 + Table M; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 16 + Rush **Table N**.
 
@@ -42,7 +75,7 @@ Do **not** extra-door leftover #563 id `spell-court-hinge` from these sheets. Co
 
 ---
 
-## 0.1 Changelog — 2026-10-22 cron (kept)
+## 0.2 Changelog — 2026-10-22 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; open #753 holds Wave 12 + Table J; open #808 holds Wave 13 + Table K; open #836 holds Wave 14 + Table L; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 15 + Rush **Table M**.
 
@@ -75,7 +108,7 @@ Do **not** extra-door leftover #563 id `spell-court-hinge` from these sheets. Co
 
 ---
 
-## 0.2 Changelog — 2026-10-21 cron (kept)
+## 0.3 Changelog — 2026-10-21 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; open #753 holds Wave 12 + Table J; open #808 holds Wave 13 + Table K; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 14 + Rush **Table L**.
 
@@ -108,7 +141,7 @@ Do **not** extra-door remaining leftover #563 id `spell-court-hinge` from these 
 
 ---
 
-## 0.3 Changelog — 2026-09-29 cron (kept)
+## 0.4 Changelog — 2026-09-29 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; open #753 holds Wave 12 + Table J; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 13 + Rush **Table K**.
 
@@ -142,7 +175,7 @@ Do **not** extra-door remaining leftover #563 ids (`spell-dummy-post` / `spell-e
 
 ---
 
-## 0.4 Changelog — 2026-09-28 cron (kept)
+## 0.5 Changelog — 2026-09-28 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 12 + Rush **Table J**.
 
@@ -176,7 +209,7 @@ Do **not** extra-door remaining leftover #563 ids (`spell-cadence-flush` / `spel
 
 ---
 
-## 0.5 Changelog — 2026-09-27 cron (kept)
+## 0.6 Changelog — 2026-09-27 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 11 + Rush **Table I**.
 
@@ -210,7 +243,7 @@ Do **not** extra-door remaining #563 ids (`spell-gait-mend` / `spell-pair-hinge`
 
 ---
 
-## 0.6 Changelog — 2026-09-26 cron (kept)
+## 0.7 Changelog — 2026-09-26 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 10 + Rush **Table H**.
 
@@ -244,7 +277,7 @@ Do **not** extra-door remaining #525 ids (`spell-wall-sting` / `spell-file-brand
 
 ---
 
-## 0.7 Changelog — 2026-09-25 cron (kept)
+## 0.8 Changelog — 2026-09-25 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 9 + Rush **Table G**.
 
@@ -278,7 +311,7 @@ Do **not** extra-door #525 Wave-7 tactical ids (`spell-wall-sting` … `spell-co
 
 ---
 
-## 0.8 Changelog — 2026-09-24 cron (kept)
+## 0.9 Changelog — 2026-09-24 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 8 + Rush **Table F**.
 
@@ -311,7 +344,7 @@ Do **not** extra-door #463 Wave-6 tactical ids (`spell-post-sting` … `spell-ab
 
 ---
 
-## 0.9 Changelog — 2026-09-23 cron (kept)
+## 0.10 Changelog — 2026-09-23 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; neither is on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 7 + Rush **Table E**.
 
@@ -344,7 +377,7 @@ Do **not** extra-door #411 Wave-5 tactical ids (`spell-oncoming` … `spell-act-
 
 ---
 
-## 0.10 Changelog — 2026-09-22 cron (kept)
+## 0.11 Changelog — 2026-09-22 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f` (no merge since the 2026-09-21 Wave-5 pass). Open #367 holds Wave 5 + Table C and is **not** on `main`; that file **unioned** that draft (did not overwrite it) and added Wave 6 + Rush **Table D**.
 
@@ -375,7 +408,7 @@ Shipped + Wave-2–5 sheets remain `STATUS: PROPOSED`. Table B/C holds still app
 
 ---
 
-## 0.11 Changelog — 2026-09-21 cron (kept)
+## 0.12 Changelog — 2026-09-21 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. Nineteen days of merges (`58302bc` → `0f5363f`, through #332) did not add a boss id, a `BossAbility` member, or a live catalog spell. That run did **not** duplicate shipped or Wave-2–4 sheets. It re-audited live gaps at `0f5363f`, aligned with same-day tactical Wave 4 (`SPELL_PROPOSALS_2026-09-21.md`, open #342), filled four remaining **primary-mechanic** holes, and wrote Rush **Table C**.
 
@@ -408,7 +441,7 @@ Shipped + Wave-2–4 sheets remain `STATUS: PROPOSED`. Wave-4 Table B still hold
 
 ---
 
-## 0.12 Changelog — 2026-09-02 cron (kept)
+## 0.13 Changelog — 2026-09-02 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) were unchanged since #137. That run did **not** duplicate shipped, Wave-2, or Wave-3 sheets. It re-audited live gaps, aligned with tactical Wave 2 (#133), filled four **primary-mechanic** holes, and wrote Rush **Table B**.
 
@@ -650,7 +683,7 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `AP_DRAIN_PASSIVE` | `BOSS_ONLY` | Aura. Would brick the 20 AP cap on the player bar. | — |
 | `DAMAGE_IMMUNE` | `BOSS_ONLY` | Fight-structure. | — |
 
-**Count:** 46 shipped specials. Player-facing **#137 adaptations: 10** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum. Wave 4 adds four more. Wave 5 adds four more. Wave 6 adds four more. Wave 7 adds four more. Wave 8 adds four more. Wave 9 adds four more. Wave 10 adds four more. Wave 11 adds four more. Wave 12 adds four more. Tactical Wave 2 (#133) supplies Wave-4 player doors. Wave 5 reuses #120 / #282 / #342. Wave 6 reuses #282 / #342. Wave 7 reuses **#282 only**. Wave 8 reuses **#411 only**. Wave 9 reuses **#463 only**. Wave 10 reuses **#525 only**. Wave 11 reuses **#563** Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 reuses **remaining #563** Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 reuses leftover #563 Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Wave 14 reuses leftover #563 Dummy Post / Enter Mend / Split Mend **and** #636 Quiet Sill. Wave 15 reuses remaining #636 Shove Mend / Exit Sting / Cadence Stretch / Far Hood. Wave 16 reuses remaining #636 Gait Wick / Dry Sting / Home Step / Must Span — **no new #137 ids**.
+**Count:** 46 shipped specials. Player-facing **#137 adaptations: 10** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum. Wave 4 adds four more. Wave 5 adds four more. Wave 6 adds four more. Wave 7 adds four more. Wave 8 adds four more. Wave 9 adds four more. Wave 10 adds four more. Wave 11 adds four more. Wave 12 adds four more. Tactical Wave 2 (#133) supplies Wave-4 player doors. Wave 5 reuses #120 / #282 / #342. Wave 6 reuses #282 / #342. Wave 7 reuses **#282 only**. Wave 8 reuses **#411 only**. Wave 9 reuses **#463 only**. Wave 10 reuses **#525 only**. Wave 11 reuses **#563** Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 reuses **remaining #563** Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 reuses leftover #563 Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Wave 14 reuses leftover #563 Dummy Post / Enter Mend / Split Mend **and** #636 Quiet Sill. Wave 15 reuses remaining #636 Shove Mend / Exit Sting / Cadence Stretch / Far Hood. Wave 16 reuses remaining #636 Gait Wick / Dry Sting / Home Step / Must Span. Wave 17 reuses remaining #636 Boot Lend / Purse Keep / Tick Plate / Last Mute — **no new #137 ids**.
 
 | Proposed special | Class | Player adaptation |
 | :--- | :--- | :--- |
@@ -710,6 +743,10 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `NAVE_DRY` (dry-sting every player-side body at leftover 0) | `BOSS_ONLY` | Bounded #636 `spell-dry-sting` |
 | `CHOIR_HEARTH` (he steps to the extra **and** the extra steps to him) | `BOSS_ONLY` | Bounded #636 `spell-home-step` |
 | `NAVE_SPAN` (must-span player **and** living player-side summons) | `BOSS_ONLY` | Bounded #636 `spell-must-span` |
+| `CHOIR_BOOT` (lend every living extra; independent unmoved checks) | `BOSS_ONLY` | Bounded #636 `spell-boot-lend` |
+| `NAVE_KEEP` (keep himself **and** extras with leftover ≥ 1) | `BOSS_ONLY` | Bounded #636 `spell-purse-keep` |
+| `NAVE_TICK` (plate himself **and** one extra) | `BOSS_ONLY` | Bounded #636 `spell-tick-plate` |
+| `CHOIR_MUTE` (mute player **and** extras’ last ids) | `BOSS_ONLY` | Bounded #636 `spell-last-mute` |
 
 Most spectacular mechanics stay boss-only on purpose.
 
@@ -882,10 +919,14 @@ These are names for a later achievement PR. They are **not** in `defaultAchievem
 | `cruet_wet` | `dry_sting_zero_bonus` | Optional mastery for Dry Nuncio (never take the leftover-0 +8). |
 | `andiron_unjoined` | `home_step_zero_joins` | Optional mastery for Hearth Legate (he never successfully Home Steps). |
 | `ell_honest` | `must_span_zero_illegal_walks` | Optional mastery for Must Preceptor (never start a walk that is not Manhattan 2 under the brand). |
+| `caliga_unfunded` | `boot_lend_zero_mp_gifts` | Optional mastery for Boot Subprior (the extra never receives +1 MP). |
+| `cista_empty` | `purse_keep_zero_banked` | Optional mastery for Purse Steward (he never banks leftover > 0). |
+| `plaster_bitten` | `tick_plate_zero_consumes` | Optional mastery for Tick Infirmarer (never let Tick Plate consume a DoT tick). |
+| `tabula_unsigned` | `last_mute_zero_refuses` | Optional mastery for Mute Notary (never have a spell id refused by Last Mute). |
 
 Do not mint Doka from these until `claimAchievementReward` is wired. Suggested feat Doka: 150–300, in line with `leader_slayer` / `critical_striker`.
 
-### 5.4 Sibling contracts (2026-10-23)
+### 5.4 Sibling contracts (2026-10-24)
 
 Same-week design PRs own adjacent surfaces. This bible does not rewrite them.
 
@@ -900,15 +941,15 @@ Same-week design PRs own adjacent surfaces. This bible does not rewrite them.
 | Tactical Wave 6 (open #463, `SPELL_PROPOSALS_2026-09-23.md`) | `spell-post-sting` … `spell-about-face` | Wave 9 extra-doors Exit Tithe / Hinge Tile / Aim Veil / Oath Blade. Do **not** extra-door Post Sting / Purse Cut / Blind Corner / Hinge Step / File Reel / Twin Span / Cadence Break / Cadence Lend / Split Purse / Spark Whelp / Turn Cap / About Face from these sheets. Twin Span stays ELITE independently-walking posts. About Face stays `NOT_PLAYER_LEARNABLE`. #463 stubs `exit_mason` / `hinge_porter` / `oath_censor` / `about_regent` are **not** these encounter ids — first grant wins if those stubs ship. |
 | Tactical Wave 7 (open #525, `SPELL_PROPOSALS_2026-09-24.md`) | `spell-wall-sting` … `spell-court-shove` | Wave 10 extra-doors Pit Wick / Must Pace / Triple Span / Pivot Foe. Do **not** extra-door Wall Sting / File Brand / Boot Sting / Shove Face / Knight Slip / Cadence Crack / Once Verse / Tick Hood / Flank Share / Spare Pace / Exit Boon / Court Shove from these sheets. Court Shove stays `NOT_PLAYER_LEARNABLE`. #525 stubs `wick_mason` / `pace_prelate` / `span_triune` / `slip_castellan` are **not** these encounter ids — first grant wins if those stubs ship. |
 | Tactical Wave 8 (open #563, `SPELL_PROPOSALS_2026-09-25.md`) | `spell-gait-mend` … `spell-court-hinge` | Wave 11 extra-doors Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 extra-doors **remaining** Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 extra-doors leftover Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Wave 14 extra-doors leftover Dummy Post / Enter Mend / Split Mend. Court Hinge stays `NOT_PLAYER_LEARNABLE` and is **not** a Wave-14 door. Dummy Post is **not** Goad / Bait. Enter Mend is **not** Font / Mend Wick / Gait Mend. Split Mend is **not** Rally / Flank Share. #563 stub `dummy_castellan` is **not** remapped to `effigy_clerk`; `flush_precentor` / `gait_cantor` / `pair_usher` / `court_hinge_regent` stay earlier doors — first grant wins if those stubs ship. |
-| Tactical Wave 9 (open #636, `SPELL_PROPOSALS_2026-09-26.md`) | `spell-shove-mend` … `spell-court-stretch` | Wave 14 extra-doors **Quiet Sill only**. Wave 15 extra-doors remaining **Shove Mend / Exit Sting / Cadence Stretch / Far Hood**. Wave 16 extra-doors remaining **Gait Wick / Dry Sting / Home Step / Must Span**. Do **not** extra-door remaining #636 ids from Wave-16 sheets. Court Stretch stays `NOT_PLAYER_LEARNABLE`. Quad Span stays off until occupy-weight exists. Gait Wick is **not** Boot Sting / Post Sting / Fuse / Pit Wick (next *walk MP*, not already-walked / tile clock). Dry Sting is **not** Empty Plate / Purse Cut / Post Sting / Lone Sting (leftover AP = 0 bonus, not RES / economy / unmoved / isolation). Home Step is **not** Hinge Step / Morrow Step / Cover Step / Swap (caster dest-pick to ally adj, **not** `isSwap`). Must Span is **not** Must Pace / Rank Lock / Diag Lock (Manhattan **exactly 2**, not “must walk to cast” / axis / diagonal). #636 stubs `shove_cantor` / `stretch_precentor` are **not** remapped to `jostle_subdeacon` / `dilate_organist`; `span_quad` / `keep_bursar` / `court_stretch_regent` stay earlier / closed doors — first grant wins if those stubs ship. Gait Wick / Dry Sting / Home Step / Must Span have **no** stub. |
-| Tactical Wave 10 (open #695, `SPELL_PROPOSALS_2026-09-27.md`) | `spell-both-mend` … `spell-court-keep` | Do **not** extra-door those ids from Wave-12 / Wave-13 / Wave-14 / Wave-15 / Wave-16 sheets. |
-| Tactical Wave 11 (open #726, `SPELL_PROPOSALS_2026-09-28.md`) | `spell-heave-mend` … `spell-court-dual` | Do **not** extra-door those ids from Wave-12 / Wave-13 / Wave-14 / Wave-15 / Wave-16 sheets. |
-| Tactical Wave 12 (open #787, `SPELL_PROPOSALS_2026-09-29.md`) | `spell-parched-mend` … `spell-court-imprint` | Do **not** extra-door those ids from Wave-14 / Wave-15 / Wave-16 sheets. Court Imprint stays `NOT_PLAYER_LEARNABLE` if so stamped. |
-| Tactical Wave 13 (open #849, `SPELL_PROPOSALS_2026-10-21.md`) | `spell-gaunt-mend` … `spell-court-lag` | Do **not** extra-door those ids from Wave-15 / Wave-16 sheets. Court Lag stays `NOT_PLAYER_LEARNABLE`. |
+| Tactical Wave 9 (open #636, `SPELL_PROPOSALS_2026-09-26.md`) | `spell-shove-mend` … `spell-court-stretch` | Wave 14 extra-doors **Quiet Sill only**. Wave 15 extra-doors remaining **Shove Mend / Exit Sting / Cadence Stretch / Far Hood**. Wave 16 extra-doors remaining **Gait Wick / Dry Sting / Home Step / Must Span**. Wave 17 extra-doors remaining **Boot Lend / Purse Keep / Tick Plate / Last Mute**. Do **not** extra-door remaining #636 ids (`spell-quad-span` / `spell-pair-slide` / `spell-court-stretch`) from Wave-17 sheets. Court Stretch stays `NOT_PLAYER_LEARNABLE`. Quad Span stays off until occupy-weight exists. Pair Slide waits (force-move pair; MIMA-005). Gait Wick is **not** Boot Sting / Post Sting / Fuse / Pit Wick (next *walk MP*, not already-walked / tile clock). Dry Sting is **not** Empty Plate / Purse Cut / Post Sting / Lone Sting (leftover AP = 0 bonus, not RES / economy / unmoved / isolation). Home Step is **not** Hinge Step / Morrow Step / Cover Step / Swap (caster dest-pick to ally adj, **not** `isSwap`). Must Span is **not** Must Pace / Rank Lock / Diag Lock (Manhattan **exactly 2**, not “must walk to cast” / axis / diagonal). #636 stubs `shove_cantor` / `stretch_precentor` are **not** remapped to `jostle_subdeacon` / `dilate_organist`; `span_quad` / `keep_bursar` / `court_stretch_regent` stay earlier / closed doors — first grant wins if those stubs ship. Gait Wick / Dry Sting / Home Step / Must Span / Boot Lend / Tick Plate / Last Mute have **no** stub. `keep_bursar` is Purse Keep’s MULTI child — **not** remapped to `purse_steward`. |
+| Tactical Wave 10 (open #695, `SPELL_PROPOSALS_2026-09-27.md`) | `spell-both-mend` … `spell-court-keep` | Do **not** extra-door those ids from Wave-12 / Wave-13 / Wave-14 / Wave-15 / Wave-16 / Wave-17 sheets. |
+| Tactical Wave 11 (open #726, `SPELL_PROPOSALS_2026-09-28.md`) | `spell-heave-mend` … `spell-court-dual` | Do **not** extra-door those ids from Wave-12 / Wave-13 / Wave-14 / Wave-15 / Wave-16 / Wave-17 sheets. |
+| Tactical Wave 12 (open #787, `SPELL_PROPOSALS_2026-09-29.md`) | `spell-parched-mend` … `spell-court-imprint` | Do **not** extra-door those ids from Wave-14 / Wave-15 / Wave-16 / Wave-17 sheets. Court Imprint stays `NOT_PLAYER_LEARNABLE` if so stamped. |
+| Tactical Wave 13 (open #849, `SPELL_PROPOSALS_2026-10-21.md`) | `spell-gaunt-mend` … `spell-court-lag` | Do **not** extra-door those ids from Wave-15 / Wave-16 / Wave-17 sheets. Court Lag stays `NOT_PLAYER_LEARNABLE`. |
 | #116 Spell Admin | Persist `ownedSpellIds` / `observedSpellIds`, soft-retire | Observation counters in §5.2 belong next to `achievementProgress`, not `localStorage`. |
 | Long Horizon 2026-09-01 | Live formulas still leave boss HP static; HUD XP saturates at 48 | Confirms §3.1 is still the unbuilt no-cap fix. Do not “fix” XP curve from this doc. |
 | MIMA 2026-09-21 (#336) | Swap × hazards, push/pull × hazards still OPEN; new Dawn-MP / modifier-HP items | Wave-4/5 **position** may ship; hazard ticks on forced move wait on MIMA-001 / 005. Do not pair Ram / Mill with pits until 005. Pawn Trade landing ticks wait on 001. |
-| Encounter Evolution 2026-09-01 / 2026-09-21 | ENC-BOSS-02 / ENC-RUSH-04… remix **existing** rooms | Table B / Table C / Table D / Table E / Table F / Table G / Table H / Table I / Table J / Table K / Table L / Table M / Table N are **new** post-clear tables, not a rewrite of those remixes. |
+| Encounter Evolution 2026-09-01 / 2026-09-21 | ENC-BOSS-02 / ENC-RUSH-04… remix **existing** rooms | Table B / Table C / Table D / Table E / Table F / Table G / Table H / Table I / Table J / Table K / Table L / Table M / Table N / Table O are **new** post-clear tables, not a rewrite of those remixes. |
 
 **Default vs boss-adaptation observation**
 
@@ -993,10 +1034,14 @@ A boss may grant **both** a #137 adaptation and a #120 / #133 `BOSS` (or extra-d
 | — | `spell-dry-sting` | Wave 16 Dry extra door. `NAVE_DRY` (sting every player-side body at leftover 0 / Cruet director) stays `BOSS_ONLY`. Player Dry Sting is one hostile, 12 + 8 iff leftover AP is 0. Do **not** grant Empty Plate, Purse Cut, Post Sting, or Lone Sting. |
 | — | `spell-home-step` | Wave 16 Hearth extra door. `CHOIR_HEARTH` (he steps to the extra **and** the extra steps to him / Andiron director) stays `BOSS_ONLY`. Player Home Step is one living ally, caster dest-pick to free Chebyshev-1, **not** `isSwap`. No free adj = fizzle, AP spent. Do **not** grant Hinge Step, Morrow Step, Cover Step, or Swap. |
 | — | `spell-must-span` | Wave 16 Must extra door (`ELITE`). `NAVE_SPAN` (brand player **and** living player-side summons / Ell director) stays `BOSS_ONLY`. Player Must Span is one hostile, rest of their current turn, walks must be Manhattan **exactly 2**. 0 walk MP is legal. Forced-move any length. Do **not** grant Must Pace, Rank Lock, or Diag Lock. |
-| — | `spell-quad-span` / `spell-boot-lend` / `spell-purse-keep` / `spell-tick-plate` / `spell-last-mute` / `spell-pair-slide` / `spell-court-stretch` | #636 remaining. **Not** Wave-16 grants. Court Stretch stays `NOT_PLAYER_LEARNABLE`. Quad Span stays off until occupy-weight exists. `span_quad` / `keep_bursar` stay earlier / closed doors. |
-| — | `spell-both-mend` … `spell-court-keep` / `spell-heave-mend` … `spell-court-dual` / `spell-parched-mend` … `spell-court-imprint` / `spell-gaunt-mend` … `spell-court-lag` | #695 / #726 / #787 / #849 remaining. **Not** Wave-16 grants. |
+| — | `spell-boot-lend` | Wave 17 Boot extra door. `CHOIR_BOOT` (lend every extra / Caliga director) stays `BOSS_ONLY`. Player Boot Lend is one unmoved ally, +1 current MP, cap at max. Forced-move does **not** fizzle. Do **not** grant Spare Pace, Gift Sill, Leftover Lend, or Haste. No stub. |
+| — | `spell-purse-keep` | Wave 17 Purse extra door (`MULTI_SOURCE`; #636 stub `keep_bursar` — first grant wins). `NAVE_KEEP` (keep himself **and** extras with leftover ≥ 1 / Cista director) stays `BOSS_ONLY`. Player Purse Keep is self, once/battle, cap 3, next own turn start. Do **not** grant Purse Cut, Empty Purse, Timestep, Leftover Lend, or Late Purse. Do **not** remap `keep_bursar`. |
+| — | `spell-tick-plate` | Wave 17 Tick extra door. `NAVE_TICK` (plate himself **and** one extra / Plaster director) stays `BOSS_ONLY`. Player Tick Plate is self, next DoT tick 0 then consume. Hits / Far Hood do **not** consume. Do **not** grant Morrow Plate, Tick Hood, Ward Plate, Empty Plate, or Cleanse. No stub. |
+| — | `spell-last-mute` | Wave 17 Mute extra door. `CHOIR_MUTE` (mute player **and** extras’ last ids / Tabula director) stays `BOSS_ONLY`. Player Last Mute is one hostile, last resolved id illegal for 1 of their turns. No last id = fizzle, AP spent. Do **not** grant Mute Thread, Once Verse, Oath Blade, or Hex of Silence. No stub. |
+| — | `spell-quad-span` / `spell-pair-slide` / `spell-court-stretch` | #636 remaining. **Not** Wave-17 grants. Court Stretch stays `NOT_PLAYER_LEARNABLE`. Quad Span stays off until occupy-weight exists. Pair Slide waits (force-move pair; MIMA-005). `span_quad` / `court_stretch_regent` stay closed. |
+| — | `spell-both-mend` … `spell-court-keep` / `spell-heave-mend` … `spell-court-dual` / `spell-parched-mend` … `spell-court-imprint` / `spell-gaunt-mend` … `spell-court-lag` | #695 / #726 / #787 / #849 remaining. **Not** Wave-17 grants. |
 
-#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. #133 Wave-2 ids stay on `SPELL_PROPOSALS_2026-09-01.md`. #282 Wave-3 ids stay on `SPELL_PROPOSALS_2026-09-02.md`. #342 Wave-4 ids stay on `SPELL_PROPOSALS_2026-09-21.md`. #411 Wave-5 ids stay on `SPELL_PROPOSALS_2026-09-22.md`. #463 Wave-6 ids stay on `SPELL_PROPOSALS_2026-09-23.md`. #525 Wave-7 ids stay on `SPELL_PROPOSALS_2026-09-24.md`. #563 / #636 / #695 / #726 / #787 / #849 stay on their dated files. Do not reuse them as #137 ids.
+#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. #133 Wave-2 ids stay on `SPELL_PROPOSALS_2026-09-01.md`. #282 Wave-3 ids stay on `SPELL_PROPOSALS_2026-09-02.md`. #342 Wave-4 ids stay on `SPELL_PROPOSALS_2026-09-21.md`. #411 Wave-5 ids stay on `SPELL_PROPOSALS_2026-09-22.md`. #463 Wave-6 ids stay on `SPELL_PROPOSALS_2026-09-23.md`. #525 Wave-7 ids stay on `SPELL_PROPOSALS_2026-09-24.md`. #563 / #636 / #695 / #726 / #787 / #849 stay on their dated files. Do not reuse them as #137 ids. Wave 17 extra-doors only Boot Lend / Purse Keep / Tick Plate / Last Mute from #636.
 
 ---
 
@@ -3699,6 +3744,145 @@ They stay out of rooms 0–9, Table B, Table C, Table D, Table E, Table F, Table
 **STATUS:** PROPOSED
 
 ---
+
+## 8.15 Encounter sheets — Wave 17 (not in `BOSS_IDS`)
+
+Primary-mechanic holes after Wave 16: **+1 current MP to an unmoved ally** (Spare Pace = +1 *now, no gate*; Gift Sill = cell *enter* +MP; Exit Boon = *leave*; Walk Toll = *+1 cost*; Haste = +2 MP *stat*; Leftover Lend / Cadence Lend dump leftover *AP*; Boot Lend adds 1 to an ally’s **current** MP iff `walkMpSpentThisTurn` is 0 — already walked = fizzle, AP spent; forced-move does **not** set the walk flag so a shoved ally can still receive it; cap at their max MP; never write max MP), **carry leftover AP to next turn start** (Timestep = full AP/MP *now*; Purse Cut / Empty Purse / Purse Lock = *their* economy; Leftover Lend dumps to an *ally now*; Late Purse *burns* leftover; Purse Keep is **self**, once/battle, 1 AP, snapshots leftover at **end of this turn**, pays `min(snapshot, 3)` at **next own turn start** — **does not splice the turn queue**; leftover 0 still spends the once/battle for 0; Dry Sting still sees leftover > 0 this turn while the keep is armed), **next DoT tick on you is 0** (Cleanse / Dispel *strip* now; Thin Ward / Ward Plate / Morrow Plate eat *hits*; Tick Hood is W7 different; Far Hood eats a *direct* hit from Chebyshev ≥ 3, not DoT; Tick Plate arms a consume — the next DoT stack tick that would apply HP loss deals 0, then consume; a 0-tick still decrements that stack’s duration; other stacks on later ticks still land; consume in `engine/dotStacks.ts`, not `dealDamage`; `challengeHealUsedRef` is not involved), **their last resolved spell id is illegal for 1 turn** (Mute Thread fizzles the *next any* id; Once Verse is echo family; Oath Blade other ids fizzle while Strike *hurts*; Hex of Silence is a full-bar *lock*; Cast Hold cannot resolve a *spell* until they walk; Last Mute reads `lastResolvedSpellId` — last id that spent AP for them this battle — and that id is illegal for 1 of **their** turns; no last id = fizzle, AP spent; Strike is illegal **only if** `physical_attack` was that last id; observation is the mute **cast**, not the later refuse).
+
+Do **not** add these ids to `BOSS_IDS` in this change. Proposed specials below are **design names**, not `BossAbility` enum members until an implementation PR adds them with explicit metadata.
+
+Wave-17 learnables reuse remaining **#636** Boot Lend / Purse Keep / Tick Plate / Last Mute. No new #137 spell ids. No remaining #636 (`spell-quad-span` / `spell-pair-slide` / `spell-court-stretch`) / #695 / #726 / #787 / #849 extra doors. Court Hinge stays closed. Court Stretch stays closed. Quad Span stays off until occupy-weight exists. Pair Slide waits (force-move pair; MIMA-005).
+
+They stay out of rooms 0–9, Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, Table L, Table M, and Table N. Pairing is **Table O** only (§10.14).
+
+**Stub note:** Boot Lend / Tick Plate / Last Mute have **no** #636 stub. Purse Keep’s stub is `keep_bursar` — **not** remapped to `purse_steward`. Do **not** remap `shove_cantor` / `stretch_precentor` / `dummy_castellan` / `flush_precentor` / `gait_cantor` / `pair_usher` / `court_hinge_regent` / `span_quad` / `keep_bursar` / `court_stretch_regent`. First grant wins if a stub ships.
+
+---
+
+### BOSS_ID: `boot_subprior`
+
+**NAME:** The Boot Subprior  
+**RELATIVE_DIFFICULTY:** 5  
+**THEME:** A bishop of the unspent stride. He does not walk for you. He funds the step you have not taken.  
+**CORE_MECHANIC:** **+1 current MP to an unmoved ally.** Every 3 turns he Boot Lends a living extra (range ≤ 3, LoS). If that extra’s `walkMpSpentThisTurn` is 0, add 1 to their **current** MP this turn (cap at their max MP). If they already walked, fizzle (AP spent; observation still fires). Forced-move does **not** set the walk flag. Distinct from Spare Pace (no gate), Gift Sill (enter cell), Haste (+2 MP stat). The learnable is **one unmoved ally, +1 current MP**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | One **gait novice** extra (0.20 * playerMaxHp, empty kit, 0 XP) so a lend target exists. Lend every 3 turns. Kit: Haste / Drain / Expose. One destructible **Caliga**; breaking it **skips the next lend**. |
+| 2 | ≤ 45% | `CHOIR_BOOT`: lend **every** living extra (independent unmoved checks). Blast + Sentinel. Caliga, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 19 | Lend resolves same turn as telegraph. Caliga, if alive, breaks itself. Overlay +8%. Gate stays unmoved (do not also gift walked extras). |
+
+**SPELLS (proposed kit):** `spell-haste`, `starter-drain`, `spell-expose`, `starter-blast` (P2), `summon-sentinel` (P2). Unique vs Lend (haste / drain / rally / wisp / sacrifice), Infirm (heal / haste / physical / iron / wisp), Morrow (swap / haste / drain / mirror / wolf), Static (blast / haste / nova / expose), Ram (physical / haste / shield / barrier / rally), Cover (heal / mirror / haste / wisp / rally), Hearth (sentinel / shield / rally / mirror / nova).  
+**DISCOVERABLE_SPELLS:** #636 `spell-boot-lend` (`PLAYER_LEARNABLE` / extra `ENEMY_DISCOVERY` door: add `bossIds: ["boot_subprior"]`). Observation = he **casts** the lend (`kind: "cast"`), including a walked fizzle. `CHOIR_BOOT` (every extra / Caliga director) is `BOSS_ONLY`. Do **not** grant Spare Pace, Gift Sill, Leftover Lend, Cadence Lend, or Haste from this fight. Haste in kit is **his** stat buff, not the player door.
+
+**AI:** Lend the novice when `walkMpSpentThisTurn` is 0 **and** current MP < max. Skip if Caliga was broken this cycle. Skip if already at max MP. Never lend the player (ally-only). Never lend himself. Sentinel recast only under cap.  
+**ARENA_RULES:** Caliga HP = `0.15 * playerMaxHp`. +1 MP is not damage and is not `recordChallengeApSpend`. Forced-move onto the novice does **not** fizzle a later lend. Do not write max MP. Do not name-check `"Boot"`.  
+**SUMMONS:** 1 gait novice from pull (0 XP, not a victory target) + 1 sentinel in P2. Cap 4. Novice death ≠ victory. The novice is the intended lend target.  
+**PLAYER_COUNTERPLAY:** Force the novice to walk first (Goad / Must Pace on *them* is not this kit — **you** walk them by occupying so they spend walk MP, or kill them before the glow); break the Caliga; body-block so the gifted 2-step has no dest. Spare Pace on **you** does not fizzle his lend.  
+**MASTERY_OBJECTIVE:** The extra never receives +1 MP (`caliga_unfunded`). A walked fizzle / Caliga skip / no-extra fizzle / already-max skip is the pass. A P2 choir lend that pays +1 to **any** extra fails it.  
+**REWARDS:** 5 / 3 when shipped. Boot Lend is the prize.  
+**SCALING_BEHAVIOUR:** hpRatio 1.60, atkRatio 1.00, offset +0, Phase-2 1.20. Gift is **+1 current MP**, not a percent. Body count **fixed**.  
+**BALANCE_RISKS:** Boot + Infirm / March / Stride / Wick / Sole is two walk-MP directors on overlapping bodies — illegal when the player is the walk target (Infirm heals if *he* walked; March/Stride/Wick/Sole tax *your* walk). Table O pairs with Lock: Compass dest **never** occupies the Caliga. He gifts the novice a 2-step; you are axis-locked — occupy the on-axis landing, or let the novice close. Mill / Ram / Hook / Pair Slide do **not** fizzle the lend (forced-move ≠ walk MP) — do not pair as a false answer. Player Boot Lend cannot target hostiles or write max MP.  
+**QA:** Observation counts his lend, including fizzle. Caliga / novice / Sentinel 0 XP. Player is never the target. Forced-move does not fizzle. Cap 4.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `purse_steward`
+
+**NAME:** The Purse Steward  
+**RELATIVE_DIFFICULTY:** 7  
+**THEME:** A king of the unspent coin. He does not Timestep the bar full. He banks three for the next office.  
+**CORE_MECHANIC:** **Carry leftover AP to next turn start.** Once per battle (every 3 turns he *attempts*; the once/battle is the lid) he Purse Keeps (self, 1 AP). After paying 1, arm a keep. At **his next turn start** (not mid-RAF, not end-of-round wrap), add `min(leftover AP at the end of this turn, 3)` to current AP (cap at max AP). Leftover 0 still spends the once/battle for 0. Distinct from Timestep (full *now*), Leftover Lend (dump to ally *now*), Surplus Ward (evade if leftover ≥ 2). The learnable is **self, once/battle, cap 3, next own turn start**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 40% | Keep when leftover after the 1-cost would be ≥ 2. Kit: Timestep / Drain Courage / Barrier — Timestep is the *now* dump, Keep is the *next* bank; both in kit is the contrast, not a second grant. One destructible **Cista**; breaking it **skips the next keep** (does not un-spend a live once/battle). |
+| 2 | ≤ 40% | `NAVE_KEEP`: he keeps (if unused) **and** every living extra with leftover ≥ 1 also arms a keep (independent snapshots; extras are not once/battle-locked to his flag). Inferno + Sentinel. Cista, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 21 | Keep resolves same turn as telegraph. Cista, if alive, breaks itself. Overlay +8%. Cap stays **3**. Death before next turn start discards the bank. |
+
+**SPELLS (proposed kit):** `spell-timestep`, `spell-drain-courage`, `spell-barrier`, `spell-inferno` (P2), `summon-sentinel` (P2). Unique vs Surplus (drain-courage / mark / haste / mirror / barrier), Lend (haste / drain / rally / wisp / sacrifice), Dry (drain-courage / frost / weaken / inferno / bomber), Crypt (barrier / drain / slow / inferno / bomber), Grandmaster (blast / swap / mirror / timestep / frost), Final (physical / timestep / sacrifice / wolf), Levy (drain-courage / expose / poison / cursed / barrier).  
+**DISCOVERABLE_SPELLS:** #636 `spell-purse-keep` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` / `ENEMY_DISCOVERY` door: add `bossIds: ["purse_steward"]`). Observation = he **arms** the keep (`kind: "cast"`), including a 0-snapshot. The next-turn pay is not a second observe. `NAVE_KEEP` (extras also bank / Cista director) is `BOSS_ONLY`. Do **not** grant Purse Cut, Empty Purse, Timestep, Leftover Lend, Late Purse, or Surplus Ward from this fight. #636 stub `keep_bursar` is **not** this id.
+
+**AI:** Keep when leftover after paying 1 would be ≥ 2 **and** unused this battle. Skip if Cista was broken this cycle. Skip if already used. Timestep is the panic *now* dump when HP ≤ 40% and Keep is already spent. Sentinel recast only under cap. Never splice the turn queue.  
+**ARENA_RULES:** Cista HP = `0.15 * playerMaxHp`. Snapshot leftover **after** this card’s 1 AP, at end of **his** turn. Keep snapshots **before** leftover-burn cards (Late Purse / Pack Tithe) if those share the end-of-turn pass. Dry Sting still sees leftover > 0 this turn. Death discards the bank. Do not name-check `"Purse"`.  
+**SUMMONS:** 1 sentinel in P2, cap 4. 0 XP. P2 extra-keeps only if that extra’s leftover ≥ 1 (empty-kit extras often sit at full AP — they **do** bank). Extra death before *their* next turn start discards *their* bank.  
+**PLAYER_COUNTERPLAY:** Spend him down so leftover snapshots 0; silence / kill before next turn start; break the Cista before he arms; Hex Toll / Stretch the Inferno so banked 3 is not enough on time.  
+**MASTERY_OBJECTIVE:** He never banks leftover > 0 (`cista_empty`). A 0-snapshot / Cista skip / already-spent skip is the pass. A next-turn pay of 1–3 fails it. A P2 extra that banks > 0 fails it.  
+**REWARDS:** 7 / 4 when shipped. Purse Keep is the prize (`ELITE` / `MULTI_SOURCE`).  
+**SCALING_BEHAVIOUR:** hpRatio 2.00, atkRatio 1.10, offset +0, Phase-2 1.20. Cap **3** is fixed. Once/battle does not scale.  
+**BALANCE_RISKS:** Purse + Surplus / Lend / Dry / Flush is two leftover-AP directors — illegal. Purse + Timestep-as-partner is two now/next dumps (Timestep stays **kit contrast**, not a pair). Table O pairs with Pendulum: Metronome dest **never** occupies the Cista. Dump leftover before snapshot, or the banked 3 recasts Inferno after the next sweep — that is the intended exam (one clock; Keep is not a second clock). Player Purse Keep cannot last past one battle or pay mid-RAF.  
+**QA:** Observation counts his arm, including 0-snapshot. Cista / Sentinel 0 XP. Pay is next **own** turn start. Dry leftover still > 0 this turn. Challenge: AP add is not `recordChallengeApSpend`. Cap 4.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `tick_infirmarer`
+
+**NAME:** The Tick Infirmarer  
+**RELATIVE_DIFFICULTY:** 5  
+**THEME:** A rook of the next fever. He does not strip the plague. He eats one pulse and lets the rest work.  
+**CORE_MECHANIC:** **Next DoT tick on you is 0.** Every 3 turns he Tick Plates himself (self, range 0) if a DoT stack is on him **or** he expects Inferno/Poison this cycle. The next DoT stack tick that would apply HP loss to him deals 0, then consume. Other stacks on later ticks still land. Direct hits are unaffected. Distinct from Morrow Plate (hits), Far Hood (direct ≥ 3), Cleanse (strip now). The learnable is **self, next DoT tick 0**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Plate every 3 turns once a DoT is on him; if none, skip (still legal, no observe). Kit: Shield / Slow / Rally. One destructible **Plaster**; breaking it **skips the next plate** (does not un-consume a live plate). |
+| 2 | ≤ 45% | `NAVE_TICK`: plate himself **and** one extra (bomber if alive). Frost Nova + Bomber. Plaster, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 19 | Plate resolves same turn as telegraph. Plaster, if alive, breaks itself. Overlay +8%. Consume stays **one** tick (do not eat the whole DoT). |
+
+**SPELLS (proposed kit):** `starter-shield`, `spell-slow`, `spell-rallying-cry`, `spell-frost-nova` (P2), `summon-bomber` (P2). Unique vs Span (shield / expose / slow / iron / bomber), Hood (shield / slow / expose / iron / mirror), Plate (shield / iron / slow / heal / sentinel), Hearth (sentinel / shield / rally / mirror / nova), Crypt (barrier / drain / slow / inferno / bomber), Conductor (rally / wisp / weaken / bomber / drain-courage), Dilate (slow / mirror / mark / enrage / bomber). He has **no** Inferno — the exam is *your* DoT, plus Fetid rot on **you**.  
+**DISCOVERABLE_SPELLS:** #636 `spell-tick-plate` (`PLAYER_LEARNABLE` / extra `ENEMY_DISCOVERY` door: add `bossIds: ["tick_infirmarer"]`). Observation = he **arms** the plate (`kind: "cast"`). A later 0-tick is not a second observe. A skip with no DoT is **not** observation. `NAVE_TICK` (himself + extra / Plaster director) is `BOSS_ONLY`. Do **not** grant Morrow Plate, Tick Hood, Ward Plate, Empty Plate, Far Hood, or Cleanse from this fight.
+
+**AI:** Plate when a DoT stack is on him. Skip if Plaster was broken this cycle. Skip if already plated. Skip if no DoT (no observe). Bomber recast only under cap. Never plate the player.  
+**ARENA_RULES:** Plaster HP = `0.15 * playerMaxHp`. Consume in the existing DoT tick helper (`engine/dotStacks.ts`), **before** HP write. A 0-tick still decrements that stack’s duration. Lava / shock / spike hazard ticks do **not** consume (not DoT stacks). Far Hood / Return Sting do not consume this plate. `challengeHealUsedRef` is not involved. Do not name-check `"Tick"`.  
+**SUMMONS:** 1 bomber in P2, cap 4. 0 XP. P2 extra-plate is the bomber; bomber death before consume wastes that plate.  
+**PLAYER_COUNTERPLAY:** Inferno / Poison him, then wait the plated tick; a second DoT type still lands; break the Plaster before he arms; do not dump a second Inferno on the plated turn.  
+**MASTERY_OBJECTIVE:** Never let Tick Plate consume a DoT tick (`plaster_bitten`). Landing a DoT that ticks for > 0 (unplated, or after consume) is the pass. A Plaster skip / no-DoT skip is the pass. A 0-tick consume on him **or** the bomber fails it.  
+**REWARDS:** 5 / 3 when shipped. Tick Plate is the prize.  
+**SCALING_BEHAVIOUR:** hpRatio 1.60, atkRatio 1.00, offset +0, Phase-2 1.20. Gate is **one tick**, not a percent. Duration until consume or 2 of his turns.  
+**BALANCE_RISKS:** Tick + Plate Bursar / Rebound / Hood / Cover / Sovereign is two incoming-mitigation directors — illegal. Tick + Countess is a **false exam** (lava river is a hazard tick, not `dotStacks`). Tick + Wick Prelate fuses are occupancy, not DoT. Table O pairs with Fetid: split-rook dest **never** occupies the Plaster. Inferno him (one tick eaten) while answering compounding rot on **you** — two DoT stories, different targets. Player Tick Plate cannot last past consume or 2 of their turns.  
+**QA:** Observation counts his arm, not the 0-tick and not a no-DoT skip. Plaster / Bomber 0 XP. Hazard ticks do not consume. Challenge: the eaten tick is 0 HP (no `recordChallengeDamageTaken` on him from that tick). Cap 4.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `mute_notary`
+
+**NAME:** The Mute Notary  
+**RELATIVE_DIFFICULTY:** 6  
+**THEME:** A bishop of the last verse. He does not silence the choir. He forbids the line you just signed.  
+**CORE_MECHANIC:** **Their last resolved spell id is illegal for 1 turn.** Every 3 turns he Last Mutes the player (range ≤ 3, LoS). Read `lastResolvedSpellId` (last id that spent AP for them this battle). For 1 of **their** turns, that id is illegal (cast refuses, 0 AP). No last id = fizzle (AP spent; observation still fires). Strike is illegal **only if** `physical_attack` was that last id. Distinct from Mute Thread (next *any* id), Oath Blade (other ids fizzle, Strike hurts), Hex of Silence (full bar). The learnable is **one hostile, last id, 1 of their turns**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 40% | Mute every 3 turns if a last id exists. Kit: Veil / Drain Courage / Blast. One destructible **Tabula**; breaking it **skips the next mute** (does not clear a live ban). |
+| 2 | ≤ 40% | `CHOIR_MUTE`: mute the player **and** every living extra that has a last id (independent reads; empty-kit extras with no last id skip). Sacrifice + Bomber. Tabula, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 20 | Mute resolves same turn as telegraph. Tabula, if alive, breaks itself. Overlay +8%. Ban stays **one** id (do not become Hex of Silence). |
+
+**SPELLS (proposed kit):** `spell-shadow-veil`, `spell-drain-courage`, `starter-blast`, `spell-sacrifice` (P2), `summon-bomber` (P2). Unique vs Lone (blast / expose / veil / inferno / archer), Archbishop (cursed / veil / sacrifice / wisp), Queen (blast / mark / nova / veil), Gaze (frost / mark / iron / weaken / veil), Dry (drain-courage / frost / weaken / inferno / bomber), Conductor (rally / wisp / weaken / bomber / drain-courage), Rebound (heal / expose / enrage / veil / wisp).  
+**DISCOVERABLE_SPELLS:** #636 `spell-last-mute` (`PLAYER_LEARNABLE` / extra `ENEMY_DISCOVERY` door: add `bossIds: ["mute_notary"]`). Observation = he **casts** the mute (`kind: "cast"`), including a no-last-id fizzle. A later refuse is not a second observe. `CHOIR_MUTE` (player + extras / Tabula director) is `BOSS_ONLY`. Do **not** grant Mute Thread, Once Verse, Oath Blade, Hex of Silence, or Cadence Stretch from this fight.
+
+**AI:** Mute when last id exists **and** is not `physical_attack` (or is Strike and they have no second damaging id). Skip if Tabula was broken this cycle. Skip if no last id (still may fizzle for observe if he casts into empty — prefer skip). Bomber recast only under cap. Never mute himself.  
+**ARENA_RULES:** Tabula HP = `0.15 * playerMaxHp`. `lastResolvedSpellId` must be written by `executeCastAttempt` / enemy resolve on **successful AP spend** (cast **or** fizzle that spent AP). Missing writer **fail-closed** (no mute; treat as no last id). Refused recast spends **0 AP**. Do not name-check `"Mute"`.  
+**SUMMONS:** 1 bomber in P2, cap 4. 0 XP. P2 extra-mutes only if that extra has a last id (usually skip).  
+**PLAYER_COUNTERPLAY:** Cast a cheap legal id last (Strike) so mute bans Strike, then Inferno; never cast before the mute (fizzle); break the Tabula; sit on a different id.  
+**MASTERY_OBJECTIVE:** Never have a spell id refused by Last Mute (`tabula_unsigned`). A no-last-id fizzle / Tabula skip is the pass. Recasting a *different* id is the pass. A refused Inferno / Strike / other last id fails it.  
+**REWARDS:** 6 / 4 when shipped. Last Mute is the prize.  
+**SCALING_BEHAVIOUR:** hpRatio 1.80, atkRatio 1.05, offset +0, Phase-2 1.20. Ban is **one id, 1 of their turns**, not a percent.  
+**BALANCE_RISKS:** Mute + Conductor / Weeping is two silence directors — illegal. Mute + Oath is a brick when last id is Strike (must Strike **and** Strike is banned). Mute + Flush is cadence + last-id. Table O pairs with Dilate: Antiphoner dest **never** occupies the Tabula. Stretch Inferno late, then mute that same id — recast is late **and** illegal this turn. Strike stays legal if last id was not Strike. Player Last Mute cannot last past 1 of the target’s turns.  
+**QA:** Observation counts his mute, including fizzle. Tabula / Bomber 0 XP. Refuse spends 0 AP. Missing last-id writer fail-closed. Challenge: a refused cast that spends 0 AP is not `recordChallengeApSpend`. Cap 4.  
+**STATUS:** PROPOSED
+
+---
+
 ## 9. Roster map
 
 | Id | Diff | Core | Learnable? | Rush room (live) |
@@ -3782,6 +3966,10 @@ They stay out of rooms 0–9, Table B, Table C, Table D, Table E, Table F, Table
 | `dry_nuncio` | 5 | Bonus if leftover AP is 0 | Dry Sting (#636) | — (Wave 16 / Table N) |
 | `hearth_legate` | 6 | Caster steps adj to an ally | Home Step (#636) | — (Wave 16 / Table N) |
 | `must_preceptor` | 6 | Walks must be Manhattan 2 | Must Span (#636) | — (Wave 16 / Table N) |
+| `boot_subprior` | 5 | +1 MP if ally unmoved | Boot Lend (#636) | — (Wave 17 / Table O) |
+| `purse_steward` | 7 | Carry leftover AP to next turn | Purse Keep (#636) | — (Wave 17 / Table O) |
+| `tick_infirmarer` | 5 | Next DoT tick is 0 | Tick Plate (#636) | — (Wave 17 / Table O) |
+| `mute_notary` | 6 | Last resolved id illegal 1 turn | Last Mute (#636) | — (Wave 17 / Table O) |
 
 Live rush room 9 still stores `weeping_pawn_2`. Implementation remaps that string to `second_lament`. Do **not** spawn a second `weeping_pawn`.
 
@@ -3806,7 +3994,7 @@ Existing `BOSS_RUSH_ROOMS` combined mechanics stay. This spec changes how **each
 
 Rush Doka/XP in `BOSS_RUSH_ROOMS` are already large flat numbers (500–5000). Do **not** also multiply by `rewardDokaMultiplier` or by player level. Persist through `buildBossRushPersistInput` → `applyRewards` only.
 
-Wave-2 through Wave-16 bosses stay out of the 10-room table except `second_lament` (room-9 remap). Pairings below are **Table B** (Wave 2–4), **Table C** (Wave 5), **Table D** (Wave 6), **Table E** (Wave 7), **Table F** (Wave 8), **Table G** (Wave 9), **Table H** (Wave 10), **Table I** (Wave 11), **Table J** (Wave 12), **Table K** (Wave 13), **Table L** (Wave 14), **Table M** (Wave 15), and **Table N** (Wave 16). Do not pair `hook_regent` with Countess, Static, or Rime. Do not pair `ivory_palisade` with Fortress. Do not pair `sinkhole_dowager` with Hook (two attract verbs). Do not pair `ram_castellan` with Fosse / Hook / Rime / Dowager. Do not pair `lock_marshal` with Fosse / Hex / Palisade / Ram / Hook / Rime. Do not pair `bait_vicar` with Goad. Do not pair `font_abbess` with Lament / Archbishop. Do not pair `surplus_auditor` with Eternal / Stride. Do not pair `mill_seneschal` with Ram / Hook / Rime / Dowager / Countess / Fosse / Lock. Do not pair `counter_chaplain` with Grandmaster / Bait / Cord. Do not pair `wedge_prior` with Queen / Ram. Do not pair `levy_rector` with Archivist / Surplus / Eternal / Conductor. Do not pair `gaze_beadle` with Wedge / Queen. Do not pair `span_chamberlain` with Palisade / Fosse / Lock / Mill. Do not pair `cover_hospitaller` with Bait / Goad / Sovereign / Cord. Do not pair `lintel_sacrist` with Fosse / Palisade / Lock / Ram / Mill. Do not pair `toll_ostiary` with Levy / Hex / Stride / Surplus / Eternal / Lintel / Fosse / Palisade / Lock. Do not pair `hinge_precentor` with Grandmaster / Counter / Morrow / Hook / Dowager / Mill / Ram. Do not pair `veil_verger` with Bait / Cover / Goad / Sovereign / Conductor. Do not pair `oath_dean` with Conductor / Levy / Surplus / Gaze. Do not pair `crypt_sexton` with Fosse / Lintel / Palisade / Lock / Wick / Ram / Hook / Dowager / Mill / Rime / Countess. Do not pair `march_prefect` with Stride / Oath / Gaze / Levy / Surplus / Lintel / Fosse / Lock / Palisade / Crypt / Goad. Do not pair `aisle_canon` with Span / Palisade / Fosse / Lock / Mill / Cover / Cord / Crypt. Do not pair `orbit_succentor` with Hinge / Grandmaster / Counter / Morrow / Hook / Dowager / Mill / Ram / Crypt / Fosse / Wick / Rime / Countess / Gaze / Wedge. Do not pair `sole_thurifer` with Lock / Stride / March / Hex / Goad / Fosse / Palisade / Crypt / Lintel / Wedge / Gaze / Conductor. Do not pair `bias_prebendary` with Lock / Sole / March / Fosse / Palisade / Crypt / Lintel / Rime. Do not pair `brick_cellarer` with Palisade / Fortress / Fosse / Crypt / Lock / Lintel / Aisle / Span / Mill / Rime / Dowager / Hook. Do not pair `rebound_almoner` with Cover / Sovereign / Archbishop / Fortress / Wick / Countess / Crypt. Do not pair `infirm_chanter` with Sole / March / Stride / Hex / Lock / Bias / Font / Lament. Do not pair `yoke_subchanter` with Hinge / Orbit / Counter / Grandmaster / Morrow / Hook / Dowager / Mill / Ram / Cord. Do not pair `salve_wicker` with Wick / Crypt / Font / Infirm / Lament. Do not pair `brand_curate` with Hexed / Archivist / Goad / Veil / Rebound. Do not pair `flush_psalmist` with Surplus / Lend / Grandmaster / Conductor. Do not pair `lone_lector` with Brand / Hexed / Archivist / Veil / Goad. Do not pair `plate_bursar` with Morrow / Rebound / Cover / Wick / Crypt / Salve. Do not pair `lend_proctor` with Flush / Surplus / Font / Conductor. Do not pair `effigy_clerk` with Goad / Bait / Cover / Counter / Grandmaster / Quiet. Do not pair `enter_deacon` with Font / Salve / Infirm / Mend Wick / Crypt / Fosse. Do not pair `split_acolyte` with Font / Cover / Infirm / Lend / Enter. Do not pair `quiet_chorister` with Oath / Dummy / Goad. Do not pair `jostle_subdeacon` with Ram / Hook / Mill / Rime / Dowager / Yoke / Orbit / Hinge / Grandmaster / Morrow / Split / Enter / Font / Infirm. Do not pair `peel_friar` with Hex / Toll / Quiet / Enter / Ingress / Shove Sting. Do not pair `dilate_organist` with Flush / Conductor / Surplus / Court Stretch. Do not pair `hood_recluse` with Queen / Static / Sole / Lock / Fosse / Rebound / Cover / Sovereign. Do not pair `wick_exorcist` with Sole / Infirm / Stride / Peel / Toll / Boot Sting / Fuse / Pit Wick. Do not pair `dry_nuncio` with Surplus / Lend / Levy / Eternal’s leftover-evade cousins / Purse Keep-as-director. Do not pair `hearth_legate` with Yoke / Orbit / Hinge / Grandmaster / Morrow / Jostle / Mill / Ram / Hook / Countess / Rime. Do not pair `must_preceptor` with Sole / Lock / Fosse / Palisade / Lintel / Crypt / March / Rank Lock.
+Wave-2 through Wave-17 bosses stay out of the 10-room table except `second_lament` (room-9 remap). Pairings below are **Table B** (Wave 2–4), **Table C** (Wave 5), **Table D** (Wave 6), **Table E** (Wave 7), **Table F** (Wave 8), **Table G** (Wave 9), **Table H** (Wave 10), **Table I** (Wave 11), **Table J** (Wave 12), **Table K** (Wave 13), **Table L** (Wave 14), **Table M** (Wave 15), **Table N** (Wave 16), and **Table O** (Wave 17). Do not pair `hook_regent` with Countess, Static, or Rime. Do not pair `ivory_palisade` with Fortress. Do not pair `sinkhole_dowager` with Hook (two attract verbs). Do not pair `ram_castellan` with Fosse / Hook / Rime / Dowager. Do not pair `lock_marshal` with Fosse / Hex / Palisade / Ram / Hook / Rime. Do not pair `bait_vicar` with Goad. Do not pair `font_abbess` with Lament / Archbishop. Do not pair `surplus_auditor` with Eternal / Stride. Do not pair `mill_seneschal` with Ram / Hook / Rime / Dowager / Countess / Fosse / Lock. Do not pair `counter_chaplain` with Grandmaster / Bait / Cord. Do not pair `wedge_prior` with Queen / Ram. Do not pair `levy_rector` with Archivist / Surplus / Eternal / Conductor. Do not pair `gaze_beadle` with Wedge / Queen. Do not pair `span_chamberlain` with Palisade / Fosse / Lock / Mill. Do not pair `cover_hospitaller` with Bait / Goad / Sovereign / Cord. Do not pair `lintel_sacrist` with Fosse / Palisade / Lock / Ram / Mill. Do not pair `toll_ostiary` with Levy / Hex / Stride / Surplus / Eternal / Lintel / Fosse / Palisade / Lock. Do not pair `hinge_precentor` with Grandmaster / Counter / Morrow / Hook / Dowager / Mill / Ram. Do not pair `veil_verger` with Bait / Cover / Goad / Sovereign / Conductor. Do not pair `oath_dean` with Conductor / Levy / Surplus / Gaze. Do not pair `crypt_sexton` with Fosse / Lintel / Palisade / Lock / Wick / Ram / Hook / Dowager / Mill / Rime / Countess. Do not pair `march_prefect` with Stride / Oath / Gaze / Levy / Surplus / Lintel / Fosse / Lock / Palisade / Crypt / Goad. Do not pair `aisle_canon` with Span / Palisade / Fosse / Lock / Mill / Cover / Cord / Crypt. Do not pair `orbit_succentor` with Hinge / Grandmaster / Counter / Morrow / Hook / Dowager / Mill / Ram / Crypt / Fosse / Wick / Rime / Countess / Gaze / Wedge. Do not pair `sole_thurifer` with Lock / Stride / March / Hex / Goad / Fosse / Palisade / Crypt / Lintel / Wedge / Gaze / Conductor. Do not pair `bias_prebendary` with Lock / Sole / March / Fosse / Palisade / Crypt / Lintel / Rime. Do not pair `brick_cellarer` with Palisade / Fortress / Fosse / Crypt / Lock / Lintel / Aisle / Span / Mill / Rime / Dowager / Hook. Do not pair `rebound_almoner` with Cover / Sovereign / Archbishop / Fortress / Wick / Countess / Crypt. Do not pair `infirm_chanter` with Sole / March / Stride / Hex / Lock / Bias / Font / Lament. Do not pair `yoke_subchanter` with Hinge / Orbit / Counter / Grandmaster / Morrow / Hook / Dowager / Mill / Ram / Cord. Do not pair `salve_wicker` with Wick / Crypt / Font / Infirm / Lament. Do not pair `brand_curate` with Hexed / Archivist / Goad / Veil / Rebound. Do not pair `flush_psalmist` with Surplus / Lend / Grandmaster / Conductor. Do not pair `lone_lector` with Brand / Hexed / Archivist / Veil / Goad. Do not pair `plate_bursar` with Morrow / Rebound / Cover / Wick / Crypt / Salve. Do not pair `lend_proctor` with Flush / Surplus / Font / Conductor. Do not pair `effigy_clerk` with Goad / Bait / Cover / Counter / Grandmaster / Quiet. Do not pair `enter_deacon` with Font / Salve / Infirm / Mend Wick / Crypt / Fosse. Do not pair `split_acolyte` with Font / Cover / Infirm / Lend / Enter. Do not pair `quiet_chorister` with Oath / Dummy / Goad. Do not pair `jostle_subdeacon` with Ram / Hook / Mill / Rime / Dowager / Yoke / Orbit / Hinge / Grandmaster / Morrow / Split / Enter / Font / Infirm. Do not pair `peel_friar` with Hex / Toll / Quiet / Enter / Ingress / Shove Sting. Do not pair `dilate_organist` with Flush / Conductor / Surplus / Court Stretch. Do not pair `hood_recluse` with Queen / Static / Sole / Lock / Fosse / Rebound / Cover / Sovereign. Do not pair `wick_exorcist` with Sole / Infirm / Stride / Peel / Toll / Boot Sting / Fuse / Pit Wick. Do not pair `dry_nuncio` with Surplus / Lend / Levy / Eternal’s leftover-evade cousins / Purse Keep-as-director. Do not pair `hearth_legate` with Yoke / Orbit / Hinge / Grandmaster / Morrow / Jostle / Mill / Ram / Hook / Countess / Rime. Do not pair `must_preceptor` with Sole / Lock / Fosse / Palisade / Lintel / Crypt / March / Rank Lock. Do not pair `boot_subprior` with Infirm / March / Stride / Wick / Sole / Mill / Ram / Hook / Pair Slide. Do not pair `purse_steward` with Surplus / Lend / Dry / Flush / Timestep-as-partner. Do not pair `tick_infirmarer` with Plate / Rebound / Hood / Cover / Sovereign / Countess / Wick Prelate. Do not pair `mute_notary` with Conductor / Weeping / Oath / Flush.
 
 ### 10.1 Rush Table B (post-first-clear, design only)
 
@@ -4187,7 +4375,36 @@ Flat rewards continue the live jackpot curve without a player-level exponent. Pe
 
 `rime_margrave` / `sinkhole_dowager` remain **solo portal / dungeon capstone**. Encounter Evolution may still attach a single Wave-16 id as ENC-BOSS-02 only if a human picks that id — this bible does not rewrite ENC-BOSS-02.
 
+### 10.14 Rush Table O (post-Table-N, design only)
+
+Unlock: one complete clear of Table N (N0–N3). **New table**, new `roomIndex` namespace `O0`–`O3`. Do **not** overwrite `BOSS_RUSH_ROOMS`, Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, Table L, Table M, or Table N. Do **not** collide ENC-RUSH remixes.
+
+Flat rewards continue the live jackpot curve without a player-level exponent. Persist through `applyRewards` only. Shared 4-extra cap per room.
+
+| Room | Pair | Combined question | Hard rule |
+| :--- | :--- | :--- | :--- |
+| O0 | `boot_subprior` + `lock_marshal` | He gifts the novice a 2-step; you are **axis-locked**. Occupy the on-axis landing. | Compass dest **never** occupies the Caliga. Off-axis walks already reject (0 MP). Forced-move does **not** fizzle the lend. Novice death ≠ victory. Not Infirm / March / Stride / Wick / Sole / Mill / Ram / Hook / Fosse / Hex / Palisade. |
+| O1 | `purse_steward` + `unbound_pendulum` | Dump leftover before snapshot, or the banked 3 recasts Inferno after the next **sweep**. | Metronome dest **never** occupies the Cista. Keep is not a second clock (pays at next own turn start, not on sweep). Death discards the bank. Not Surplus / Lend / Dry / Flush. |
+| O2 | `tick_infirmarer` + `fetid_rook` | Inferno him (one tick eaten) while answering compounding **rot** on you. | Split-rook dest **never** occupies the Plaster. Rot on you is not this plate (plate is self). Lava / hazard ticks do not consume. Twin counts as a body. Not Plate / Rebound / Hood / Cover / Countess / Wick Prelate. |
+| O3 | `mute_notary` + `dilate_organist` | Stretch Inferno late, then mute **that same id**. | Antiphoner dest **never** occupies the Tabula. Strike stays legal if last id was not Strike. Stretch cap 8. Not Conductor / Weeping / Oath / Flush / Surplus / Court Stretch. |
+
+**Held (illegal until a later pass):**
+
+| Pair | Why illegal now |
+| :--- | :--- |
+| `boot_subprior` + `infirm_chanter` / `march_prefect` / `stride_censor` / `wick_exorcist` / `sole_thurifer` | Two walk-MP directors. |
+| `boot_subprior` + `mill_seneschal` / `ram_castellan` / `hook_regent` | Forced-move does **not** fizzle the lend — a false answer. |
+| `purse_steward` + `surplus_auditor` / `lend_proctor` / `dry_nuncio` / `flush_psalmist` | Two leftover-AP directors. |
+| `tick_infirmarer` + `plate_bursar` / `rebound_almoner` / `hood_recluse` / `cover_hospitaller` / `mirror_sovereign` | Two incoming-mitigation directors. |
+| `tick_infirmarer` + `crimson_countess` | Lava is a hazard tick, not `dotStacks`. |
+| `mute_notary` + `silent_conductor` / `weeping_pawn` | Two silence directors. |
+| `mute_notary` + `oath_dean` | Last id Strike + Oath-only Strike — a brick. |
+| Wave-17 ids in rooms 0–9, B0–B3, C0–C3, D0–D3, E0–E3, F0–F3, G0–G3, H0–H3, I0–I3, J0–J3, K0–K3, L0–L3, M0–M3, or N0–N3 | Table A stays the shipped 19 + lament remap. Tables B–N stay their waves. |
+
+`rime_margrave` / `sinkhole_dowager` remain **solo portal / dungeon capstone**. Encounter Evolution may still attach a single Wave-17 id as ENC-BOSS-02 only if a human picks that id — this bible does not rewrite ENC-BOSS-02.
+
 ---
+
 ## 11. Implementation contract (later PRs)
 
 When someone implements this, split work. Do not land it as one combat rewrite.
@@ -4242,6 +4459,9 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | AT. Wave 16 kits | New `BossId`s + kits only when `spellData` already has the verbs **or** the kit stays on the live 32 | Do not add Wave 16 ids to `BOSS_IDS` without kits. No new #137 spell ids. Forced-move does not detonate Gait Wick. Dry leftover is the target’s bar. Home Step is occupancy dest, not `swapPositions`. Must Span illegal walk spends 0 MP. |
 | AU. Rush Table N | New 4-room table after Table M clear | Do not rewrite rooms 0–9, B0–B3, C0–C3, D0–D3, E0–E3, F0–F3, G0–G3, H0–H3, I0–I3, J0–J3, K0–K3, L0–L3, or M0–M3 |
 | AV. Wave-16 extra doors | `bossIds` on Gait Wick / Dry Sting / Home Step / Must Span | Do not extra-door Court Hinge / Court Stretch / Quad Span or remaining #636 / any #695 / #726 / #787 / #849 ids; do not grant Boot Sting / Post Sting / Fuse / Must Pace / Empty Plate / Hinge Step / Morrow Step / Rank Lock / Diag Lock from Wick / Dry / Hearth / Must; do not remap `shove_cantor` / `stretch_precentor` / `dummy_castellan` / `span_quad` / `keep_bursar`; first grant wins |
+| AW. Wave 17 kits | New `BossId`s + kits only when `spellData` already has the verbs **or** the kit stays on the live 32 | Do not add Wave 17 ids to `BOSS_IDS` without kits. No new #137 spell ids. Forced-move does not fizzle Boot Lend. Purse Keep is not a queue splice. Tick consume is `dotStacks`, not `dealDamage`. Last Mute fail-closed on missing last-id writer. |
+| AX. Rush Table O | New 4-room table after Table N clear | Do not rewrite rooms 0–9, B0–B3, C0–C3, D0–D3, E0–E3, F0–F3, G0–G3, H0–H3, I0–I3, J0–J3, K0–K3, L0–L3, M0–M3, or N0–N3 |
+| AY. Wave-17 extra doors | `bossIds` on Boot Lend / Purse Keep / Tick Plate / Last Mute | Do not extra-door Court Hinge / Court Stretch / Quad Span / Pair Slide or any #695 / #726 / #787 / #849 ids; do not grant Spare Pace / Gift Sill / Leftover Lend / Purse Cut / Timestep / Morrow Plate / Mute Thread / Oath Blade from Boot / Purse / Tick / Mute; do not remap `keep_bursar` / `shove_cantor` / `stretch_precentor` / `dummy_castellan` / `span_quad` / `court_stretch_regent`; first grant wins |
 
 **Spell metadata checklist** for every new discoverable:
 
@@ -4303,6 +4523,8 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | 39 | Wave-15 objects | Stole / Stoup / Antiphoner / Capuche are not enemies, 0 XP. Player is never the jostle shove target. Enter does not tick Exit Sting. Stretch cap 8. Far Hood 1–2 hits do not consume. DoT does not consume Far Hood. |
 | 40 | Table N | Pulpit never on Cresset. Stones never on Cruet. Bier never on Andiron. Quoin never on Ell. |
 | 41 | Wave-16 objects | Cresset / Cruet / Andiron / Ell are not enemies, 0 XP. Forced-move does not detonate Gait Wick. Dry leftover is the target’s bar. Home Step is not `swapPositions`. Must Span illegal walk spends 0 MP. Diagonal 1,1 is Manhattan 2. |
+| 42 | Table O | Compass never on Caliga. Metronome never on Cista. Split-rook never on Plaster. Antiphoner never on Tabula. |
+| 43 | Wave-17 objects | Caliga / Cista / Plaster / Tabula are not enemies, 0 XP. Novice death ≠ victory. Forced-move does not fizzle Boot Lend. Purse Keep is not a queue splice. Tick consume is `dotStacks`. Last Mute refuse spends 0 AP. Missing last-id writer fail-closed. |
 
 ---
 
@@ -4311,9 +4533,9 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 - Production TypeScript / Motoko for any of the above.
 - New CharacterStats fields.
 - Changing `xpForNextLevel`.
-- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I). Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, Table L, Table M, and Table N are additive.
+- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I). Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, Table L, Table M, Table N, and Table O are additive.
 - Making every spectacular mechanic player-usable.
-- New #137 spell ids (Wave 3 reuses #120; Wave 4 reuses #133; Wave 5 reuses #120 / #282 / #342; Wave 6 reuses #282 / #342; Wave 7 reuses #282; Wave 8 reuses #411; Wave 9 reuses #463; Wave 10 reuses #525; Wave 11 reuses #563 Gait Seal / Diag Lock / Brick Shift / Return Sting; Wave 12 reuses remaining #563 Gait Mend / Pair Hinge / Mend Wick / Body Mark; Wave 13 reuses leftover #563 Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend; Wave 14 reuses leftover #563 Dummy Post / Enter Mend / Split Mend and #636 Quiet Sill; Wave 15 reuses remaining #636 Shove Mend / Exit Sting / Cadence Stretch / Far Hood; Wave 16 reuses remaining #636 Gait Wick / Dry Sting / Home Step / Must Span).
+- New #137 spell ids (Wave 3 reuses #120; Wave 4 reuses #133; Wave 5 reuses #120 / #282 / #342; Wave 6 reuses #282 / #342; Wave 7 reuses #282; Wave 8 reuses #411; Wave 9 reuses #463; Wave 10 reuses #525; Wave 11 reuses #563 Gait Seal / Diag Lock / Brick Shift / Return Sting; Wave 12 reuses remaining #563 Gait Mend / Pair Hinge / Mend Wick / Body Mark; Wave 13 reuses leftover #563 Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend; Wave 14 reuses leftover #563 Dummy Post / Enter Mend / Split Mend and #636 Quiet Sill; Wave 15 reuses remaining #636 Shove Mend / Exit Sting / Cadence Stretch / Far Hood; Wave 16 reuses remaining #636 Gait Wick / Dry Sting / Home Step / Must Span; Wave 17 reuses remaining #636 Boot Lend / Purse Keep / Tick Plate / Last Mute).
 - Deploying or “fixing” `backend_extended/`.
 - Wiring Swap × hazards or push/pull × hazards (MIMA owns those PRs).
 - Granting Gale Fan, Twin Gate, Cut In, After Verse, Sanguine Toll, Draw Together, or Eclipse Fold from Wave-5 / Wave-6 / Wave-7 / Wave-8 sheets (#342 already stamped those doors on shipped bosses).
@@ -4329,6 +4551,8 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 - Extra-dooring Court Hinge or remaining #636 (except Quiet Sill) / any #695 / #726 / #787 ids **from Wave-14 sheets**.
 - Extra-dooring Court Hinge / Court Stretch or remaining #636 (Quad Span / Gait Wick / Dry Sting / Home Step / Must Span / Boot Lend / Purse Keep / Tick Plate / Last Mute / Pair Slide) / any #695 / #726 / #787 / #849 ids from Wave-15 sheets.
 - Extra-dooring Court Hinge / Court Stretch / Quad Span or remaining #636 (Boot Lend / Purse Keep / Tick Plate / Last Mute / Pair Slide) / any #695 / #726 / #787 / #849 ids from Wave-16 sheets.
+- Extra-dooring Court Hinge / Court Stretch / Quad Span / Pair Slide or any #695 / #726 / #787 / #849 ids from Wave-17 sheets.
+- Granting Spare Pace / Gift Sill / Leftover Lend / Cadence Lend / Purse Cut / Timestep / Late Purse / Morrow Plate / Tick Hood / Mute Thread / Oath Blade / Once Verse / Hex of Silence from Boot / Purse / Tick / Mute, or remapping `keep_bursar` / `shove_cantor` / `stretch_precentor` / `dummy_castellan` / `span_quad` / `court_stretch_regent` onto Wave-17 sheets.
 - Granting Boot Sting / Post Sting / Fuse / Pit Wick / Must Pace / Empty Plate / Purse Cut / Hinge Step / Morrow Step / Cover Step / Rank Lock / Diag Lock from Wick / Dry / Hearth / Must, or remapping `shove_cantor` / `stretch_precentor` / `dummy_castellan` / `span_quad` / `keep_bursar` / `court_stretch_regent` onto Wave-16 sheets.
 - Granting Gait Mend / Chase Mend / Enter Mend / Heave Mend / Exit Tithe / Ingress Mark / Shove Sting / Cadence Flush / Stall / Sidestep / Near Hood from Jostle / Peel / Dilate / Hood, or remapping `shove_cantor` / `stretch_precentor` / `dummy_castellan` / `span_quad` / `keep_bursar` / `court_stretch_regent` onto Wave-15 sheets.
 - Granting Goad / Bait Pylon / Font / Mend Wick / Gait Mend / Oath Blade / Quiet Hex from Effigy / Enter / Split / Quiet, or remapping `dummy_castellan` / `flush_precentor` / `gait_cantor` / `pair_usher` / `shove_cantor` / `keep_bursar` / `court_hinge_regent` onto Wave-14 sheets.
@@ -4366,15 +4590,15 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | Tactical ids Wave 6 | `docs/automation/SPELL_PROPOSALS_2026-09-23.md` (#463) | Wave 9 extra-doors Exit Tithe / Hinge Tile / Aim Veil / Oath Blade. Twin Span / About Face / File Reel / Hinge Step stay off these sheets. |
 | Tactical ids Wave 7 | `docs/automation/SPELL_PROPOSALS_2026-09-24.md` (#525) | Wave 10 extra-doors Pit Wick / Must Pace / Triple Span / Pivot Foe. Remaining #525 ids stay off these sheets. |
 | Tactical ids Wave 8 | `docs/automation/SPELL_PROPOSALS_2026-09-25.md` (#563) | Wave 11 extra-doors Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 extra-doors Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 extra-doors Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Wave 14 extra-doors Dummy Post / Enter Mend / Split Mend. Court Hinge stays closed. |
-| Tactical ids Wave 9 | `docs/automation/SPELL_PROPOSALS_2026-09-26.md` (#636) | Wave 14 extra-doors Quiet Sill only. Wave 15 extra-doors Shove Mend / Exit Sting / Cadence Stretch / Far Hood. Wave 16 extra-doors Gait Wick / Dry Sting / Home Step / Must Span. Remaining #636 ids stay off Wave-16 sheets. Quad Span stays off until occupy-weight. |
-| Tactical ids Wave 10 | `docs/automation/SPELL_PROPOSALS_2026-09-27.md` (#695) | Not Wave-12, Wave-13, Wave-14, Wave-15, or Wave-16 doors. |
-| Tactical ids Wave 11 | `docs/automation/SPELL_PROPOSALS_2026-09-28.md` (#726) | Not Wave-12, Wave-13, Wave-14, Wave-15, or Wave-16 doors. |
-| Tactical ids Wave 12 | `docs/automation/SPELL_PROPOSALS_2026-09-29.md` (#787) | Not Wave-14, Wave-15, or Wave-16 doors. |
-| Tactical ids Wave 13 | `docs/automation/SPELL_PROPOSALS_2026-10-21.md` (#849) | Not Wave-15 or Wave-16 doors. Court Lag stays `NOT_PLAYER_LEARNABLE`. |
+| Tactical ids Wave 9 | `docs/automation/SPELL_PROPOSALS_2026-09-26.md` (#636) | Wave 14 extra-doors Quiet Sill only. Wave 15 extra-doors Shove Mend / Exit Sting / Cadence Stretch / Far Hood. Wave 16 extra-doors Gait Wick / Dry Sting / Home Step / Must Span. Wave 17 extra-doors Boot Lend / Purse Keep / Tick Plate / Last Mute. Remaining #636 (Quad Span / Pair Slide / Court Stretch) stay off Wave-17 sheets. Quad Span stays off until occupy-weight. Pair Slide waits (MIMA-005). |
+| Tactical ids Wave 10 | `docs/automation/SPELL_PROPOSALS_2026-09-27.md` (#695) | Not Wave-12, Wave-13, Wave-14, Wave-15, Wave-16, or Wave-17 doors. |
+| Tactical ids Wave 11 | `docs/automation/SPELL_PROPOSALS_2026-09-28.md` (#726) | Not Wave-12, Wave-13, Wave-14, Wave-15, Wave-16, or Wave-17 doors. |
+| Tactical ids Wave 12 | `docs/automation/SPELL_PROPOSALS_2026-09-29.md` (#787) | Not Wave-14, Wave-15, Wave-16, or Wave-17 doors. |
+| Tactical ids Wave 13 | `docs/automation/SPELL_PROPOSALS_2026-10-21.md` (#849) | Not Wave-15, Wave-16, or Wave-17 doors. Court Lag stays `NOT_PLAYER_LEARNABLE`. |
 | Long horizon | `docs/automation/LONG_HORIZON_2026-09-01.md` | Live boss HP still static; HUD sat at 48 |
 | MIMA | `docs/automation/MECHANIC_INTERACTION_MATRIX_2026-09-21.md` (#336) | Swap × hazards, push/pull × hazards still OPEN |
-| Encounter rooms | `docs/encounters/ENCOUNTER_EVOLUTION_2026-09-01.md` | ENC-RUSH remixes Table A; Table B / C / D / E / F / G / H / I / J / K / L / M / N are separate |
+| Encounter rooms | `docs/encounters/ENCOUNTER_EVOLUTION_2026-09-01.md` | ENC-RUSH remixes Table A; Table B / C / D / E / F / G / H / I / J / K / L / M / N / O are separate |
 
 ---
 
-**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 + 4 Wave-4 + 4 Wave-5 + 4 Wave-6 + 4 Wave-7 + 4 Wave-8 + 4 Wave-9 + 4 Wave-10 + 4 Wave-11 + 4 Wave-12 + 4 Wave-13 + 4 Wave-14 + 4 Wave-15 + 4 Wave-16 sheets. Rush Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, Table L, Table M, and Table N are additive. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
+**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 + 4 Wave-4 + 4 Wave-5 + 4 Wave-6 + 4 Wave-7 + 4 Wave-8 + 4 Wave-9 + 4 Wave-10 + 4 Wave-11 + 4 Wave-12 + 4 Wave-13 + 4 Wave-14 + 4 Wave-15 + 4 Wave-16 + 4 Wave-17 sheets. Rush Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, Table L, Table M, Table N, and Table O are additive. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
