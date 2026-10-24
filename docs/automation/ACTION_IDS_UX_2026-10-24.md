@@ -231,16 +231,16 @@ TITLE: Summon control bar shows title-cased piece name
 CATEGORY: combat
 PRIORITY: P3
 CONFIDENCE: HIGH
-FILES_OR_SYSTEMS: src/frontend/src/components/SummonControlPanel.tsx; src/frontend/src/utils/summonDisplayName.ts
-CURRENT_BEHAVIOUR: WorldExploration passes summon.pieceType raw ("knight"); panel printed lowercase.
-DESIRED_BEHAVIOUR: Panel displays "Knight" (title case).
+FILES_OR_SYSTEMS: src/frontend/src/utils/summonDisplayName.ts (NEW, unwired); SummonControlPanel.tsx (stack-locked — older a11y PRs)
+CURRENT_BEHAVIOUR: WorldExploration passes summon.pieceType raw ("knight"); panel prints lowercase.
+DESIRED_BEHAVIOUR: Panel displays "Knight" via formatSummonDisplayName(summonName || summonPieceType).
 EVIDENCE: WorldExploration.tsx ~18964; SummonControlPanel name span.
-RECOMMENDED_ACTION: Title-case in SummonControlPanel (done this pass).
+RECOMMENDED_ACTION: Wire summonDisplayName into SummonControlPanel when free (reverted this pass for stack-compat).
 AUTONOMY:
-- SAFE_TO_AUTO_IMPLEMENT
+- SAFE_TO_AUTO_IMPLEMENT (unwired util + tests)
 REGRESSION_RISK: LOW
-VALIDATION_REQUIRED: Summon turn shows title-cased pieceType.
-STATUS: IMPLEMENTED_THIS_RUN
+VALIDATION_REQUIRED: summonDisplayName.test.ts
+STATUS: IMPLEMENTED_THIS_RUN (module only — not wired)
 ```
 
 ```
