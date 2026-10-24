@@ -9,7 +9,7 @@ import {
 describe("spellSlotDisabledCopy", () => {
   it("names empty slots and overworld mute", () => {
     assert.match(emptySpellSlotLabel(3), /Empty slot 3/);
-    assert.match(emptySpellSlotLabel(3), /Spellbook/);
+    assert.match(emptySpellSlotLabel(3), /open Book to equip/);
     assert.match(
       spellSlotTitle({ kind: "overworld", spellName: "Slash" }),
       /fight starts/,

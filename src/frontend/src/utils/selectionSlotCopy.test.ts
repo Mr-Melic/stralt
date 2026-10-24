@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   LOADING_SLOTS,
   SELECTION_HEADLINE,
   SELECTION_SUBCOPY,
   SLOT_HEADER,
 } from "./selectionSlotCopy.ts";
+
+const selectionSource = readFileSync(
+  fileURLToPath(
+    new URL("../components/CharacterSelection.tsx", import.meta.url),
+  ),
+  "utf8",
+);
 
 describe("selectionSlotCopy", () => {
   it("slot header uses a real glyph, not a raw \\u escape", () => {
@@ -24,5 +33,12 @@ describe("selectionSlotCopy", () => {
     assert.match(SELECTION_HEADLINE, /champion/i);
     assert.equal(/paper baby/i.test(SELECTION_HEADLINE), false);
     assert.match(SELECTION_SUBCOPY, /HUD|Board/i);
+  });
+
+  it("is not wired — CharacterSelection still prints raw JSXText escapes", () => {
+    assert.match(selectionSource, /\\u2694 Slot \{slotNumber\}/);
+    assert.match(selectionSource, /Loading character slots\\u2026/);
+    assert.match(selectionSource, /Choose your Paper Baby Vampire!/);
+    assert.equal(selectionSource.includes("selectionSlotCopy"), false);
   });
 });

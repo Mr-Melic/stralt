@@ -11,10 +11,14 @@ export type SpellSlotDisableReason =
   | { kind: "ap"; spellName: string; need: number; have: number }
   | { kind: "ready"; spellName: string; detail: string };
 
-/** Empty battle / book slot label (replace bare "Empty slot N" when wired). */
+/**
+ * Empty battle-bar slot hover.
+ * Open PR #830 already locked `emptyBattleSlotTitle` ("open Book to equip").
+ * Keep this helper aligned so wiring does not mint a third empty-slot string.
+ */
 export function emptySpellSlotLabel(slotIndex: number): string {
   const n = Math.max(1, Math.floor(Number(slotIndex) || 1));
-  return `Empty slot ${n} — open the Spellbook to equip a spell`;
+  return `Empty slot ${n} — open Book to equip`;
 }
 
 export function spellSlotTitle(reason: SpellSlotDisableReason): string {
