@@ -2,11 +2,11 @@
 
 **Guardian:** Save / Data Evolution Guardian  
 **HEAD:** `0f5363f`  
-**Scope:** stale-client overwrite, levels/XP, Doka, CharacterStats, `saveBattleStats`, `applyRewards`, `updateCharacter`, `createCharacter`, `saveCallerUserProfile`, `deepNormalizeBigInts`, `writeGeneration`, APP_VERSION wipe, unpaid death, `versionGate`.  
+**Scope:** spell ownership/discovery/IDs/visuals, achievements, challenges, inventory, dungeon, Boss Rush, config refs; plus prior stale-overwrite pass (001–007).  
 **Forbidden edits (this run):** `WorldExploration.tsx`, `main.mo`, `BuffShop.tsx`, `versionGate.ts`, `deathPenalty.ts`, `App.tsx`, `AchievementsPanel.tsx`, `combatMath.ts`.  
 **Do not clone:** #362 #385 #386 #388 #400 #408 #437 #466 #490 #508 #577 #622 #667 #731 #778 #803 #828 #893.
 
-Excluded known items (not re-reported): CharacterStats 12-field / later migration; `saveBattleStats` never-raise Doka/XP/atk/res/init + ignore spell arrays; no `writeGeneration`; APP_VERSION drops unpaid-death; `deepNormalizeBigInts` Number cut; `saveCallerUserProfile` full-replace / empty `uiLayout`; persist never raises atk/res/init / never writes evasion/sp/sr/resilience/chc after create; `getSessionState` blood=50; WX never `getLevelUpConfig`; `apMpGrowthEveryNLevels` vs `apMpLevelThreshold`; compounding vs linear HP; `MAX_PERSISTED_AP/MP=20`; official `killCount` stays 0; applyRewards 100k/500k; leftover curve `100*2^(N-1)`; death 20/40 via `saveBattleStats`; persist-lock Doka seeding.
+Excluded known items (not re-reported): OLD_SPELL_IDS purge including physical_attack; ownership is catalog union starters; minLevel unenforced; empty-keys fall back to slot localStorage spell levels; upgradeSpell length ungarded; isBuiltInSpellId omits innates; dual loadout Text vs Nat; empty keys drop Text bar; pixelPattern unused / sprite URLs optional; adminDeletePlayerSpriteConfig does not delete Character; BuffShop ids/costs ≠ BUFF_CATALOG + unbounded purchaseBuff + localStorage vs buffInventories; dungeon Principal-scoped + non-idempotent (official never writes); claim uses current dokaReward / Feats hide inactive; achievementProgress survives delete; boss_defeated_* not allowlisted; pickEnemyLevel 999; region levelMax miss; tierSpawn JSON bigint throw; changelog unused / APP_VERSION live; nextGameKeyRequestId wraps; CharacterStats 12-field; saveBattleStats never-raise; no writeGeneration; APP_VERSION unpaid-death; deepNormalizeBigInts; profile full-replace; getSessionState blood=50; MAX_PERSISTED 20; killCount 0 official.
 
 ## NEW findings
 
@@ -21,8 +21,18 @@ See `ACTION_IDS_SDEG_2026-10-24.md`. Summary:
 | SDEG-2026-10-24-005 | Starter ap≤10/mp≤5 above PLAYER_BASE 8/4 | Low–medium formula vs store |
 | SDEG-2026-10-24-006 | `gameTypes.Character.dokaBalance` false SoT; forge still sends | Low (stripped) / agent trap |
 | SDEG-2026-10-24-007 | `saveCallerUserProfile` silent void on reject | Medium stale HUD / name |
+| SDEG-2026-10-24-008 | Live boss configs = `pbv_boss_configs`; canister unused + schema skew | Medium cross-device boss edits |
+| SDEG-2026-10-24-009 | SummonUnitDef persist drops summonKit/ap/mp | High admin summons / kit control |
+| SDEG-2026-10-24-010 | Frontend clearBossRushForSlot = reset only vs canister remove | Medium latent slot reuse |
+| SDEG-2026-10-24-011 | setBossRushProgress +1 walk mints master without combat | High raw-client integrity |
+| SDEG-2026-10-24-012 | Legendary challenge badges never persist | Low cosmetic |
+| SDEG-2026-10-24-013 | Spell level/bar localStorage keyed by display-name userId | Medium empty-keys hydrate |
+| SDEG-2026-10-24-014 | Enemy hard-delete; ghost spellLevelKeys after catalog purge | Medium rename/retire |
+| SDEG-2026-10-24-015 | purchaseBuff without occupied character slot | Low official / med raw |
 
-Still open (not NEW; vehicles exist): victory HP floor vs linear cap (#386 / SDEG-2026-09-02-001); unpaid-death owner key (#385/#508/#667).
+Helpers (this pass): `bossConfigPersist.ts`, `summonUnitDefPersist.ts`, `bossRushSlotClear.ts`, `challengeBadgePersist.ts`, `slotLocalProgressKeys.ts`, `catalogDeletePolicy.ts` (+ tests). No forbidden-file edits.
+
+Still open (not NEW; vehicles exist): victory HP floor vs linear cap (#386); unpaid-death owner key (#385/#508/#667); BuffShop canister wire (#408/#490); complete(9) ordering (#803 landed).
 
 ## MAX_LEVEL / silent caps / Number() on XP·Doka·level
 
@@ -42,11 +52,22 @@ Still open (not NEW; vehicles exist): victory HP floor vs linear cap (#386 / SDE
 
 | Owner | Effect |
 | :--- | :--- |
-| Yesterday | Shared wallet death tax across slots; mapsVisited local only |
-| Six months | Same; high level still safe until leftover Nat exceeds IEEE |
-| Pre-feature | Optional Character fields null OK; no writeGeneration |
-| Renamed/retired spells | Unchanged (prior SDEG); empty keys still drop bar |
-| Slot delete + recreate | Inherits mapsVisited / spell_levels localStorage + canister achievement/buff maps |
+| Yesterday | Shared wallet death tax; display-name spell/maps keys; boss drafts local-only |
+| Six months | High-level Number cut (001); ghost OLD_SPELL keys still on bar ownership |
+| Pre-feature | Optional Character fields null OK; challenge badges never stored |
+| Renamed/retired | Enemy hard-delete orphans; no alias map; ghost spellLevelKeys after purge |
+| Slot delete + recreate | Inherits mapsVisited / spell_levels / active_spells localStorage + achievement/buff maps; Boss Rush full-clear only if canister remove ran |
+| Admin summons | Kit/ap/mp lost on round-trip (009); starter pieceType kits still work from spellData |
+| Raw client | Boss Rush walk-to-master (011); purchaseBuff into empty slot (015) |
+
+## Helper-only without forbidden files?
+
+| Finding | Helper+tests only? |
+| :--- | :--- |
+| 008–015 | Yes for lock/docs; wiring needs WX / main.mo / BuffShop / vehicles listed above |
+| Sprite URLs required | No new bug — enemy/player spriteUrl optional (`adminGuard.mo` 282–290, 312–328); ads require https (not player persist) |
+| saveActiveSpells / dual Nat | Still do not wire (known 10-23-004); no new helper |
+| changelog / GameKey wrap | Known; unchanged |
 
 ## What this run will not do
 
