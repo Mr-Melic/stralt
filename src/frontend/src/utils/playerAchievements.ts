@@ -5,6 +5,13 @@
  * encoded, fails the caller==player guard and returns []. Either way every
  * feat stays locked and Claim never renders, so advertised Doka (50–1000)
  * cannot be collected even after markAchievementUnlocked succeeds.
+ *
+ * Victory also emits `boss_defeated_${bossId}` conditions
+ * (`victoryAchievements.ts`). Those strings are not in
+ * `KNOWN_ACHIEVEMENT_CONDITIONS` / `defaultAchievements`, and
+ * `adminGuard.knownAchievementCondition` rejects them, so
+ * `checkAndFireAchievement` never finds a catalog row (AFDA-2026-10-24-042).
+ * Do not restack `victoryAchievements.ts` (#904).
  */
 
 import type { AchievementProgress } from "../types/gameTypes";
