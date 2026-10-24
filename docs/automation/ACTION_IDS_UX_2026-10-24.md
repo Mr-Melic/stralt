@@ -429,7 +429,7 @@ STATUS: NEW
 
 | Module | IDs |
 | :--- | :--- |
-| `src/frontend/src/utils/summonDisplayName.ts` (+ SummonControlPanel wire) | UX-SUMMON-NAME-PIECETYPE |
+| `src/frontend/src/utils/summonDisplayName.ts` | UX-SUMMON-NAME-PIECETYPE |
 | `src/frontend/src/utils/deathPenaltyCopy.ts` | UX-DEATH-XP-LEFTOVER-COPY, UX-RECAP-DEFEAT-XP-BASIS |
 | `src/frontend/src/utils/spellSlotDisabledCopy.ts` | UX-SPELL-AP-DISABLED-REASON |
 | `src/frontend/src/utils/attackNearestDisabledCopy.ts` | UX-ATTACK-NEAREST-WHY |
