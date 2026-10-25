@@ -168,6 +168,10 @@ import {
   stampPortalTiles,
   toVoidSet,
 } from "../engine/mapGen";
+import {
+  drawHazardOverlay,
+  shouldPaintHazardOverlay,
+} from "../engine/mapHazardPaint";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
   type OccupancyContext,
@@ -7413,126 +7417,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentMap.wallPalette,
           );
 
-          // EXP5: Draw hazard tile overlay on floor tiles
+          // EXP5: Draw hazard tile overlay on floor tiles.
+          // Paint lives in engine/mapHazardPaint.ts. Do not fold into tilePaint
+          // or barrierRender. Gameplay (damage / walk tax) stays here.
           const hazardType =
             tileType === "floor"
               ? currentMap.hazardTiles?.get(`${x},${y}`)
               : undefined;
-          if (hazardType && !isClicked) {
-            const hSeed = Math.abs(
-              x * 7331 + y * 5003 + currentMap.id.charCodeAt(0),
+          if (shouldPaintHazardOverlay({ tileType, hazardType, isClicked })) {
+            drawHazardOverlay(
+              ctx,
+              screenPos.x,
+              screenPos.y,
+              hazardType,
+              x,
+              y,
+              currentMap.id.charCodeAt(0),
+              effectiveTileW,
+              effectiveTileH,
+              now,
             );
-            const hrng = seededRng(hSeed);
-            const tw = effectiveTileW;
-            const th = effectiveTileH;
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(screenPos.x + tw / 2, screenPos.y + th / 2);
-            ctx.lineTo(screenPos.x, screenPos.y + th);
-            ctx.lineTo(screenPos.x - tw / 2, screenPos.y + th / 2);
-            ctx.closePath();
-            ctx.clip();
-
-            // Base tint colour
-            if (hazardType === "lava") {
-              ctx.fillStyle = "rgba(180,30,0,0.68)";
-            } else if (hazardType === "ice") {
-              ctx.fillStyle = "rgba(100,200,255,0.55)";
-            } else {
-              ctx.fillStyle = "rgba(40,40,40,0.72)";
-            }
-            ctx.fill();
-
-            // Dense pixel texture (30-50 random pixels using the hazard palette)
-            const pxCount = Math.floor(hrng() * 21) + 30; // 30-50
-            for (let pi = 0; pi < pxCount; pi++) {
-              const px = screenPos.x - tw / 2 + hrng() * tw;
-              const py = screenPos.y + hrng() * th;
-              const ps = hrng() < 0.4 ? 2 : 3;
-              const shade = Math.floor(hrng() * 60) - 20;
-              if (hazardType === "lava") {
-                // Dark red → orange-red → bright orange, with occasional yellow hotspot
-                const isHot = hrng() < 0.12;
-                const r = isHot ? 255 : Math.min(255, 160 + Math.abs(shade));
-                const g = isHot ? 220 : Math.max(0, 30 + shade);
-                const b = isHot ? 20 : 0;
-                ctx.fillStyle = `rgb(${r},${g},${b})`;
-              } else if (hazardType === "ice") {
-                // Pale blue-white to light cyan
-                const bv = Math.min(255, 200 + shade);
-                ctx.fillStyle = `rgb(${Math.max(180, bv - 20)},${Math.max(220, bv)},255)`;
-              } else {
-                // Spikes: dark grey/charcoal with lighter tip pixels
-                const isTip = hrng() < 0.15;
-                const gv = isTip ? 170 : Math.max(30, 60 + shade);
-                ctx.fillStyle = `rgb(${gv},${gv},${gv})`;
-              }
-              ctx.fillRect(Math.round(px), Math.round(py), ps, ps);
-            }
-
-            // Type icon symbol drawn at tile centre
-            const tcx = screenPos.x;
-            const tcy = screenPos.y + th / 2;
-            ctx.globalAlpha = 0.9;
-            ctx.font = `${Math.round(th * 0.65)}px serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            if (hazardType === "lava") {
-              // Lava: animated glow dots
-              const pulse = 0.6 + 0.4 * Math.sin(now * 0.004 + hSeed);
-              ctx.globalAlpha = pulse * 0.9;
-              for (let di = 0; di < 4; di++) {
-                const da = (di / 4) * Math.PI * 2;
-                const dr = th * 0.2;
-                const dx2 = Math.cos(da) * dr * 0.5;
-                const dy2 = Math.sin(da) * dr * 0.3;
-                ctx.fillStyle = `rgba(255,${180 + Math.floor(pulse * 60)},20,${pulse})`;
-                ctx.fillRect(
-                  Math.round(tcx + dx2) - 2,
-                  Math.round(tcy + dy2) - 2,
-                  4,
-                  4,
-                );
-              }
-            } else if (hazardType === "ice") {
-              // Ice: snowflake-like star pattern
-              ctx.fillStyle = "rgba(255,255,255,0.9)";
-              for (let si = 0; si < 4; si++) {
-                const sa = (si / 4) * Math.PI;
-                const sl = th * 0.28;
-                const sx1 = tcx + Math.cos(sa) * sl;
-                const sy1 = tcy + Math.sin(sa) * sl * 0.5;
-                const sx2 = tcx - Math.cos(sa) * sl;
-                const sy2 = tcy - Math.sin(sa) * sl * 0.5;
-                ctx.fillRect(Math.round(sx1) - 1, Math.round(sy1) - 1, 3, 3);
-                ctx.fillRect(Math.round(sx2) - 1, Math.round(sy2) - 1, 3, 3);
-              }
-              ctx.fillRect(tcx - 1, tcy - 1, 3, 3);
-            } else {
-              // Spikes: 3 upward-pointing triangular pixel clusters
-              ctx.fillStyle = "rgba(180,180,180,0.95)";
-              const spikeOffsets = [-tw * 0.22, 0, tw * 0.22];
-              for (const sox of spikeOffsets) {
-                const sby = tcy - th * 0.18;
-                // Triangle tip + body pixels
-                ctx.fillRect(
-                  Math.round(tcx + sox) - 1,
-                  Math.round(sby) - 1,
-                  2,
-                  2,
-                );
-                ctx.fillStyle = "rgba(120,120,120,0.85)";
-                ctx.fillRect(
-                  Math.round(tcx + sox) - 2,
-                  Math.round(sby + 4),
-                  4,
-                  3,
-                );
-                ctx.fillStyle = "rgba(180,180,180,0.95)";
-              }
-            }
-            ctx.restore();
           }
 
           // ── E. Apply row shimmer overlay ─────────────────────────────────
