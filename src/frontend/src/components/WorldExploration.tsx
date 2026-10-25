@@ -99,6 +99,10 @@ import {
 } from "../engine/battleSetup";
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
+  applySoakedBattleWalkHazards,
+  shouldDispatchDeathAfterBattleWalkHazard,
+} from "../engine/battleWalkHazardHit";
+import {
   battleWalkCostPerTile,
   battleWalkMpBudget,
   battleWalkMpCost,
@@ -314,7 +318,6 @@ import {
   recordChallengeItemHealUsed,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
-  recordChallengeWalkHazardDamage,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
   shouldClearSpellAfterApSpend,
@@ -9912,24 +9915,59 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         dest,
         riftTile: voidRiftTile,
       });
-      if (thornDmg > 0) {
-        setCharacterStats((prev) => ({
-          ...prev,
-          hp: Math.max(0, prev.hp - thornDmg),
-        }));
-        logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
-      }
-      if (riftDmg > 0) {
-        setCharacterStats((prev) => ({
-          ...prev,
-          hp: Math.max(0, prev.hp - riftDmg),
-        }));
-        logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
-      }
-      challengeTotalDamageRef.current = recordChallengeWalkHazardDamage(
-        challengeTotalDamageRef.current,
+      // Raw thorn/rift packets used to skip RES and Shield Charm that
+      // playerTakesDamage applies to enemy kits / DoT, so Untouchable
+      // failed on a walk the shield would have soaked. Lethal walks
+      // also skipped the plague-style synchronous death dispatch.
+      const hpBefore = characterStatsRef.current.hp;
+      const hit = applySoakedBattleWalkHazards(
+        {
+          hp: hpBefore,
+          res: Number(characterStatsRef.current.res),
+          resModifier: getStatModifier(
+            "player",
+            "res",
+            activeEffectsRef.current,
+          ),
+          shieldHp: shieldHpRef.current,
+        },
         { thornDmg, riftDmg },
       );
+      shieldHpRef.current = hit.remainingShield;
+      if (hit.shieldAbsorb > 0 || hit.challengeDamage > 0 || hit.lethal) {
+        // Functional updater: walk and DoT can share a tick, and
+        // playerTakesDamage writes prev.hp so a closed-over snapshot
+        // cannot restore the player toward the pre-walk value.
+        setCharacterStats((prev) => {
+          const { newHp } = hpAfterIncomingDamage(prev.hp, hit.challengeDamage);
+          return { ...prev, hp: newHp };
+        });
+      }
+      if (hit.shieldAbsorb > 0) {
+        logBattleEntry(`Shield absorbed ${hit.shieldAbsorb} damage`, "#a855f7");
+      }
+      if (thornDmg > 0) {
+        logBattleEntry(`🌿 Thorned ground! -${hit.thorn.hpLost} HP`, "#7a3a8a");
+      }
+      if (riftDmg > 0) {
+        logBattleEntry(`🌀 Void rift! -${hit.rift.hpLost} HP`, "#6600cc");
+      }
+      if (hit.challengeDamage > 0) {
+        challengeTotalDamageRef.current = recordChallengeDamageTaken(
+          challengeTotalDamageRef.current,
+          hit.challengeDamage,
+        );
+      }
+      if (shouldDispatchDeathAfterBattleWalkHazard(hit.lethal)) {
+        logDebugInfo("BATTLE", "[DEATH-BISECT] source: battle-walk-hazard", {
+          hpBefore,
+          thornDmg,
+          riftDmg,
+          hpLost: hit.challengeDamage,
+          hpAfter: hit.newHp,
+        });
+        _handlePlayerDeath();
+      }
     },
     [
       isThornedGround,
