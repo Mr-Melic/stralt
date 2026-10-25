@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   type UiLayoutStorage,
-  isPrincipalTextForUiLayout,
   readUiLayoutCache,
   resolveUiLayoutStorageUserId,
   shouldSaveLocalUiLayoutToBackend,
@@ -25,9 +24,7 @@ function memoryStorage(init: Record<string, string> = {}): UiLayoutStorage & {
 }
 
 describe("uiLayoutStorageKey", () => {
-  it("resolves principal text over display name", () => {
-    assert.equal(isPrincipalTextForUiLayout("aaaaa-aa"), true);
-    assert.equal(isPrincipalTextForUiLayout("VampireBob"), false);
+  it("resolves live principal text over display name, including hyphenated names", () => {
     assert.equal(
       resolveUiLayoutStorageUserId({
         principalText: "aaaaa-aa",
@@ -37,7 +34,21 @@ describe("uiLayoutStorageKey", () => {
     );
     assert.equal(
       resolveUiLayoutStorageUserId({
+        principalText: "cwofb-yqaaa-aaaap-qp45q-cai",
+        passedUserId: "dark-lord",
+      }),
+      "cwofb-yqaaa-aaaap-qp45q-cai",
+    );
+    assert.equal(
+      resolveUiLayoutStorageUserId({
         principalText: null,
+        passedUserId: "dark-lord",
+      }),
+      "dark-lord",
+    );
+    assert.equal(
+      resolveUiLayoutStorageUserId({
+        principalText: "  ",
         passedUserId: "VampireBob",
       }),
       "VampireBob",
@@ -80,25 +91,25 @@ describe("uiLayoutStorageKey", () => {
     );
   });
 
-  it("blocks backend save until principal cache was reconciled", () => {
+  it("blocks backend save until identity principal is present and blob reconciled", () => {
     assert.equal(
       shouldSaveLocalUiLayoutToBackend({
         backendBlobReconciled: false,
-        storageUserIdIsPrincipal: true,
+        hasIdentityPrincipal: true,
       }),
       false,
     );
     assert.equal(
       shouldSaveLocalUiLayoutToBackend({
         backendBlobReconciled: true,
-        storageUserIdIsPrincipal: false,
+        hasIdentityPrincipal: false,
       }),
       false,
     );
     assert.equal(
       shouldSaveLocalUiLayoutToBackend({
         backendBlobReconciled: true,
-        storageUserIdIsPrincipal: true,
+        hasIdentityPrincipal: true,
       }),
       true,
     );

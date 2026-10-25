@@ -1,6 +1,5 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   type Challenge,
   type ChallengePanelProgress,
@@ -11,10 +10,6 @@ import {
 } from "../utils/challengeCompletion";
 import { shouldShowChallengeHud } from "../utils/challengeHudVisibility";
 import { logDebugWarn } from "../utils/debugLogger";
-import {
-  readUiLayoutCache,
-  resolveUiLayoutStorageUserId,
-} from "../utils/uiLayoutStorageKey";
 
 export type {
   Challenge,
@@ -46,43 +41,6 @@ const TIER_STYLES: Record<ChallengeTier, { bg: string; color: string }> = {
   legendary: { bg: "#ffd700", color: "#1a0000" },
 };
 
-function defaultChallengePos(): { x: number; y: number } {
-  return {
-    x: Math.max(
-      0,
-      (typeof window !== "undefined" ? window.innerWidth : 800) - 260,
-    ),
-    y: 300,
-  };
-}
-
-function loadChallengeLayout(
-  storageUserId: string,
-  legacyUserId: string,
-): { pos: { x: number; y: number }; folded: boolean } | null {
-  try {
-    const raw = readUiLayoutCache({
-      storagePrefix: STORAGE_KEY_PREFIX,
-      storageUserId,
-      legacyUserId,
-      storage: localStorage,
-    });
-    if (!raw) return null;
-    const saved = JSON.parse(raw) as {
-      pos?: { x: number; y: number };
-      folded?: boolean;
-    };
-    if (!saved?.pos) return null;
-    return {
-      pos: saved.pos,
-      folded: saved.folded === true,
-    };
-  } catch (e) {
-    logDebugWarn("UI", "ChallengePanel layout load failed", String(e));
-    return null;
-  }
-}
-
 export default function ChallengePanel({
   visible,
   userId,
@@ -92,22 +50,25 @@ export default function ChallengePanel({
   onDecline,
   progress,
 }: ChallengePanelProps) {
-  const { identity } = useInternetIdentity();
-  const principalText = identity?.getPrincipal()?.toText?.() ?? "";
-  const storageUserId = resolveUiLayoutStorageUserId({
-    principalText,
-    passedUserId: userId,
-  });
   const [folded, setFolded] = useState(false);
-  const [pos, setPos] = useState<{ x: number; y: number }>(defaultChallengePos);
-
-  // Prefer II principal cache (copy-if-missing from display-name key).
-  useEffect(() => {
-    const saved = loadChallengeLayout(storageUserId, userId);
-    if (!saved) return;
-    setPos(saved.pos);
-    setFolded(saved.folded);
-  }, [storageUserId, userId]);
+  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_PREFIX + userId);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved?.pos) return saved.pos;
+      }
+    } catch (e) {
+      logDebugWarn("UI", "ChallengePanel layout load failed", String(e));
+    }
+    return {
+      x: Math.max(
+        0,
+        (typeof window !== "undefined" ? window.innerWidth : 800) - 260,
+      ),
+      y: 300,
+    };
+  });
 
   const dragRef = useRef<{
     mx: number;
@@ -124,10 +85,8 @@ export default function ChallengePanel({
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         try {
-          // Ensure legacy name key is migrated before writing principal key.
-          loadChallengeLayout(storageUserId, userId);
           localStorage.setItem(
-            STORAGE_KEY_PREFIX + storageUserId,
+            STORAGE_KEY_PREFIX + userId,
             JSON.stringify({ pos: p, folded: f }),
           );
         } catch (e) {
@@ -135,7 +94,7 @@ export default function ChallengePanel({
         }
       }, 400);
     },
-    [storageUserId, userId],
+    [userId],
   );
 
   useEffect(

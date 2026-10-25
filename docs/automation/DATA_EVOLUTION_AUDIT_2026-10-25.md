@@ -1,117 +1,123 @@
 # Player data evolution audit — 2026-10-25
 
 **Guardian:** Save / Data Evolution Guardian  
-**Trigger:** cron / automation  
-**HEAD:** `0f5363f`  
+**Trigger:** cron `0 */48 * * *`  
+**HEAD:** `0f5363f` (unchanged since 2026-09-21 / 2026-10-24)  
 **Gameplay systems not touched:** RAF body, map generation, turn logic, damage math  
 
-This run does **not** approve any new required persist field and does **not** edit
-`WorldExploration.tsx`, `main.mo`, `BuffShop.tsx`, `versionGate.ts`,
-`deathPenalty.ts`, `App.tsx`, `AchievementsPanel.tsx`, or `combatMath.ts`.
+This run does **not** approve any new required persist field, does **not** attach
+`(with migration)` to live `main.mo`, and does **not** edit `WorldExploration.tsx`,
+`main.mo`, `BuffShop.tsx`, `versionGate.ts`, `deathPenalty.ts`, `App.tsx`,
+`AchievementsPanel.tsx`, or `combatMath.ts`.
+
+Do not clone #362 #385 #386 #388 #400 #408 #437 #466 #490 #508 #577 #622 #667
+#731 #778 #803 #828 #893 #1014 helpers.
 
 ## Scope
 
-Frontend persist/evolution under `src/frontend` (localStorage / sessionStorage /
-hydrate `Number()` / config JSON caches / delete cleanup / display-name vs
-principal / shrine-covenant-feat / HUD layout / visuals / leaderboard / chat /
-one-shot Doka / death markers / BuffShop / GameKey / challenge / dungeon refs).
+Character stats, levels/XP, Doka, owned spells, spell levels, discovery,
+achievements, challenges, inventory/purchases, dungeon, Boss Rush, config refs,
+entity IDs, unbounded progression, owner-uploaded visuals, spell-discovery
+future-proofing.
 
 ## Explicitly not re-reported
 
-Everything in the 2026-10-24 ledger and the operator known-list, including:
-OLD_SPELL_IDS, catalog ownership, empty-keys spell levels, display-name spell
-keys, BuffShop local vs canister, mapsVisited/ground-doka wipe/inherit
-(SDEG-2026-10-24-003 / vehicle #490 name-key half), legacy active-spells
-overwrite, dual boss-rush config encode, feat/covenant/shrine version-gate,
-leaderboard claimed/`Number()`, pieceType vs pixelPattern, killCount 0,
-readApplyRewardsOk `Number()`, profile full-replace, dungeon session refs,
-challenge badges session-only, WX never `getLevelUpConfig`, etc.
+Everything in `ACTION_IDS_SDEG_2026-10-24.md` and the operator known-list,
+including: OLD_SPELL_IDS purge; catalog ∪ starters ownership; minLevel;
+empty-keys spell-level fallback; upgradeSpell length; isBuiltInSpellId;
+dual loadout Text vs Nat; empty keys drop Text bar; pixelPattern unused /
+sprite URLs optional / not rendered; sprite delete does not delete Character;
+BuffShop local vs canister; unbounded purchaseBuff; dungeon official unused;
+claim current dokaReward; Feats hide inactive; achievementProgress survives
+delete; boss_defeated_* not allowlisted; pickEnemyLevel 999; region levelMax;
+tierSpawn bigint throw; changelog unused / APP_VERSION live; GameKey wrap;
+12-field stats; never-raise atk/res/init; no writeGeneration; unpaid-death
+version wipe; deepNormalizeBigInts; profile full-replace; blood=50;
+MAX_PERSISTED 20; killCount 0 official; readApplyRewardsOk Number();
+principal Doka death tax; mapsVisited/ground-doka wipe/inherit (keying);
+applyRewards vitals lag; starter 10/5 vs PLAYER_BASE 8/4; Character.dokaBalance;
+silent profile reject; pbv_boss_configs; SummonUnitDef drop kit;
+Boss Rush reset vs remove; +1 walk master; challenge badges session;
+display-name spell keys; enemy hard-delete; ghost spellLevelKeys;
+purchaseBuff empty slot; WX boss-rush double-encode; legacy active-spells
+overwrite; region/modifier hard-delete; palette not required; WX never
+getLevelUpConfig; apMp dual formula; compounding HP; feat/covenant/shrine
+version-gate keep-list; leaderboard claimed; pieceType vs pixelPattern.
 
-Vehicle **#490** (draft) still owns BuffShop + feat-counter **keying** by II
-principal. This run does not restack that.
+Vehicle **#490** still owns BuffShop + feat-counter **keying** by II principal.
+**#1014** owns helpers 10-24-008…019. This run does not restack those files.
 
-## NEW findings
+## Cohort questions (NEW only)
 
-### SDEG-2026-10-25-001 — Ground-Doka feat counter advances before credit settle
-
-`WorldExploration.tsx` 11366–11407: after `tryClaimPickupId`, the code
-unconditionally increments `groundDokaPickupCountRef` and writes
-`${userId}_slotN_pbv_ground_doka_pickups` **before** `resolveOneShotCreditSettle`.
-On `settle.kind === "release"` the pickup id is released (11391–11392) so a
-retry can remint the wallet path correctly — but the feat counter is **not**
-decremented, so each failed credit + retry adds another count toward
-`loot_10_doka` → `markAchievementUnlocked` → claimable Doka.
-
-| Cohort | Impact |
+| Player | What happens today |
 | :--- | :--- |
-| Yesterday | Flaky network / `#err` on `applyRewards` inflates the counter; 10 “attempts” unlock loot feat without 10 credits |
-| 6 months | Same; localStorage counter survives APP_VERSION wipe? **No** (not in versionGate keep-list) — wipe resets; in-session + across reloads until wipe |
-| Pre-feature | n/a (counter is client-trusted) |
-| Renamed / retired | Feat id `loot_10_doka` still allowlisted |
+| Created yesterday | Ground-Doka feat counter advances on claim, not on credit settle (001). Overworld `loot_10_doka` waits for a portal/win (002). HUD cache is still display-name (003 helper; wiring deferred — DraggablePanel overlaps #429+). Shrine/covenant localStorage writes are dead (004). Shop package hard-delete orphans KYC `packageId` (005). |
+| Created six months ago | Same client gates. High-level Number() cuts remain (known 001-10-24). Same-name shared-browser HUD poison until 003 is wired onto a DraggablePanel vehicle. Slot delete+recreate inherits shrine/covenant keys (004) and maps/ground (known 003-10-24). |
+| Created before a feature | Optional Character fields stay null. No ownedSpellIds. No shrine feat. `saveUserUiLayout` on a missing profile still creates `{name=""; uiLayout}` (006); official ProfileSetup still sends `uiLayout:""`. |
+| Created before a spell/enemy rename | No alias table (known). Shop package ids have the same hole (005). Region/modifier/enemy hard-delete known. |
+| Owns now-retired content | Spell retire-if-referenced (known). Shop packages hard-delete (005). Dead shrine/covenant keys must not become required Character fields. Owner-uploaded sprite URLs remain optional / not rendered. |
 
-**Helper-only without WX?** Policy helper yes (`shouldCountGroundDokaPickupForFeat(settle)`); **lock requires WX call-site** (forbidden this stack).
+## Surface matrix (delta)
 
-### SDEG-2026-10-25-002 — Overworld `loot_10_doka` only rechecks on mapsVisited delta
+| Surface | Persist | NEW this run |
+| :--- | :--- | :--- |
+| CharacterStats (12) | Required | No schema change. Not approved. |
+| Level / leftover XP | Nat leftover | No `MAX_LEVEL`. Number() credit path known. |
+| Doka | Principal wallet | Ground-Doka feat counter ≠ wallet settle (001). |
+| Owned spells / levels / discovery | Catalog ∪ keys | No `ownedSpellIds`. Do not add until later chain file after `20260901`. |
+| Achievements | `principal#id` | `loot_10` idle gate (002); shrine counter unwired (004). Claim still current `dokaReward` (known). |
+| Challenges | Session | Badges still session-only (known). Challenge HUD key now principal (003). |
+| Inventory / purchases | GameKey live; KYC leftover | Shop package hard-delete vs `purchaseRecords.packageId` (005). |
+| Dungeon / Boss Rush | Session refs / slot map | Unchanged this run. |
+| Config refs / IDs | Admin maps | Shop packages (005). No Character package/region/modifier ids. |
+| Visuals | `colors` hex + `pieceType`; optional URLs | Still not mandatory gameplay deps. Palette 10-24-019. |
+| HUD / profile | `saveUserUiLayout` merge; `saveCallerUserProfile` replace | Display-name poison (003, helper only — DraggablePanel overlaps #429+). Empty-name stub (006). |
+| Shrine / covenant | Optional Character session fields unused; localStorage write-only | 004 |
 
-`WorldExploration.tsx` 2260–2284: the idle achievement effect checks
-`groundDokaPickupCountRef >= 10` **only inside** `if (mapsVisited !== prev.mapsVisited)`.
-A `dokaBalance` change (pickup commit) updates `prev.doka` but never evaluates
-loot_10. Victory path still passes `groundDokaPickups` into
-`clientTrustedVictoryAchievementConditions` (12483–12496). Pure overworld
-farming of the 10th coin therefore waits for the next portal (or a battle win).
+## Unbounded progression
 
-| Cohort | Impact |
+- **No `MAX_LEVEL`.** `applyRewards` uses Motoko `Nat`. Admin UI: no player level cap.
+- Silent caps unchanged: AP/MP 20, applyRewards 100_000 / 500_000, enemy pick 999, summon level 99, HUD `Number.MAX_SAFE_INTEGER` from L48, `shrineCount > 100` if `updateSessionState` is ever wired (official never calls it).
+- Do not persist compounding `getPlayerBaseStats` HP.
+
+## Visuals
+
+Owner-uploaded `spriteUrl` / facing URLs remain catalog storage, not combat art
+(`adminVisualStatus.ts`). Deleting a sprite config or palette cannot unload a
+Character. Do not make a URL or palette id required on Character without a later
+migration after `20260901` and a missing-asset fallback.
+
+## Spell discovery (future-proof)
+
+Still no `ownedSpellIds` / observe / commit APIs. Owned ids today are catalog ∪
+starters ∪ `spellLevelKeys`. Retired catalog rows leave ghost keys (known).
+Do not add required ownership/discovery fields until SDEG-001/002 (new later
+file after `20260901`, never edit shipped NewActor).
+
+## Migration analysis
+
+| Change | Approve? |
 | :--- | :--- |
-| Yesterday | Delayed unlock; players who never portal after the 10th coin stay locked until a fight |
-| 6 months | Same client gate |
-| Pre-feature | n/a |
+| New required Character / stats / config field | **No** — needs later chain file after `20260901` with empty defaults, idempotent, not a destructive replay. |
+| Attaching `(with migration)` as a player rewrite | **No** |
+| Editing shipped `20260831` / `20260901` NewActor | **No** |
+| Helper-only frontend locks (this PR) | **Yes** — no persist-schema / EOP chain change |
 
-**Helper-only without WX?** Predicate helper yes; **wiring needs WX** (or a tiny state tick WX already owns).
+Repeated deployment of this PR cannot reapply a destructive migration (none
+shipped). Client copy-if-missing HUD migrate is idempotent after the name key
+is deleted.
 
-### SDEG-2026-10-25-003 — Display-name HUD localStorage can poison `saveUserUiLayout`
+## Helper-only without forbidden files?
 
-GameFlow passes `userId = userProfile.id ?? name` (`GameFlow.tsx` 256 / 278).
-Candid `UserProfile` has no `id`, so this is the display name.
-`DraggablePanel.tsx` 45–68 / 517–519 caches under `pbv_panel_layout_${userId}`;
-`saveLayoutToBackend` 80–88 loads that cache and calls `saveUserUiLayout`.
-When `getUserUiLayout` returns empty (`if (!blob) return` at 475) or fails
-(533–538), the name-keyed cache is kept. Any later drag/fold (552–571) uploads
-that cache to the **caller principal**. Two Internet Identities that chose the
-same profile name on one browser can therefore copy each other’s HUD blob onto
-the canister. Challenge panel (`ChallengePanel.tsx` 26 / 56 / 88–90) is
-name-keyed and local-only (no canister) — shared-PC collision only.
-
-Distinct from SDEG-2026-10-24-013 (spell keys) and from profile
-`uiLayout:""` full-replace (SDEG-2026-09-29-003).
-
-| Cohort | Impact |
-| :--- | :--- |
-| Yesterday | Shared browser + duplicate display names + empty/failed uiLayout fetch |
-| 6 months | Same; names were never unique-checked |
-| Renamed profile | Official UI has no profile rename after setup — collision is cross-principal same name |
-
-**Helper-only without forbidden files?** **Yes.** `DraggablePanel.tsx` /
-`GameFlow.tsx` / `ChallengePanel.tsx` are not in the do-not-edit list. Helper:
-`resolveUiLayoutStorageKey(principalText)` + refuse backend save from a
-name-keyed cache when backend blob was empty/missing this session.
-
-## Surfaces checked — no new issue
-
-| Surface | Notes |
-| :--- | :--- |
-| GameKey | No localStorage cache; status/redeem from canister |
-| Chat messages | Canister `sendMessage` binds profile name; only width/channels in localStorage (`aestralto-chat-*`, device-global prefs) |
-| One-shot Doka ids | Memory `Set` + settle keep/release (known remint class) |
-| Pending death | Slot marker; known principal-wallet vs slot-marker skew |
-| Dungeon chain | Session refs only; canister unused by official UI (known) |
-| Challenge badges | Session-only (known) |
-| Config JSON caches | tier bigint throw / boss-rush double-encode / palette optional / WX levelup — known |
-| Visuals | `pieceType` draw path; `pixelPattern` catalog write — known |
-| Leaderboard hydrate | `Number()` + claimed count — known |
-| Delete local cleanup | Boss Rush reset only; maps/ground inherit — known 10-24-003 / #490 |
+| ID | Helper+tests only? | This PR |
+| :--- | :--- | :--- |
+| 001–002 | Policy yes; lock needs WX | helpers only |
+| 003 | Helper yes; wiring needs DraggablePanel / ChallengePanel | **helper only** — those files overlap #429+ |
+| 004–006 | Yes for lock/docs | helpers only |
 
 ## What this run will not approve
 
-- New required Character / stats / config fields
-- Cloning #466 / #490 / #508 / #577 / #622 / #667 / #731 / #778 / #828 / #893 / #1014 helpers
-- Editing WX / main.mo / BuffShop / versionGate / deathPenalty / App / AchievementsPanel / combatMath while older persist PRs queue
+- New required persist fields or EOP chain edits
+- Cloning open helper PRs listed above
+- Editing WX / main.mo / BuffShop / versionGate / deathPenalty / App /
+  AchievementsPanel / combatMath while older persist PRs queue
