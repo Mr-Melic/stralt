@@ -43,7 +43,10 @@ function BreadcrumbLink({
   return (
     <Comp
       data-slot="breadcrumb-link"
-      className={cn("hover:text-foreground transition-colors", className)}
+      className={cn(
+        "hover:text-foreground inline-flex min-h-[44px] min-w-[44px] items-center transition-colors",
+        className,
+      )}
       {...props}
     />
   );
@@ -88,7 +91,10 @@ function BreadcrumbEllipsis({
       data-slot="breadcrumb-ellipsis"
       role="presentation"
       aria-hidden="true"
-      className={cn("flex size-9 items-center justify-center", className)}
+      className={cn(
+        "flex size-9 min-h-[44px] min-w-[44px] items-center justify-center",
+        className,
+      )}
       {...props}
     >
       <MoreHorizontal className="size-4" />
