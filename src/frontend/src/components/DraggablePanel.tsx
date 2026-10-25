@@ -2,10 +2,17 @@ import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { backendInterface } from "../backend";
 import { useActor } from "../hooks/useActor";
+import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   BACKEND_SAVE_DEBOUNCE_MS,
   type UiLayoutActor,
 } from "../hooks/usePanelLayout";
+import {
+  isPrincipalTextForUiLayout,
+  readUiLayoutCache,
+  resolveUiLayoutStorageUserId,
+  shouldSaveLocalUiLayoutToBackend,
+} from "../utils/uiLayoutStorageKey";
 
 export interface DraggablePanelProps {
   panelId: string;
@@ -43,10 +50,16 @@ export const TOP_BAR_PANEL_ID = "__topbar__";
 const TOP_BAR_FALLBACK_BOTTOM = 48;
 
 function loadLayout(
-  userId: string,
+  storageUserId: string,
+  legacyUserId?: string,
 ): Record<string, { x: number; y: number; folded: boolean }> {
   try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + userId);
+    const raw = readUiLayoutCache({
+      storagePrefix: STORAGE_PREFIX,
+      storageUserId,
+      legacyUserId,
+      storage: localStorage,
+    });
     if (!raw) return {};
     return JSON.parse(raw) as Record<
       string,
@@ -58,14 +71,18 @@ function loadLayout(
 }
 
 function saveLayout(
-  userId: string,
+  storageUserId: string,
   panelId: string,
   state: { x: number; y: number; folded: boolean },
+  legacyUserId?: string,
 ): void {
   try {
-    const existing = loadLayout(userId);
+    const existing = loadLayout(storageUserId, legacyUserId);
     existing[panelId] = state;
-    localStorage.setItem(STORAGE_PREFIX + userId, JSON.stringify(existing));
+    localStorage.setItem(
+      STORAGE_PREFIX + storageUserId,
+      JSON.stringify(existing),
+    );
   } catch {
     // ignore storage errors
   }
@@ -76,13 +93,23 @@ function saveLayout(
  * Text field. Debounced by the caller (~1.5s after the last drag). Logs a
  * warning on failure but does NOT throw — the localStorage cache is still
  * valid. No-op when the actor is null (not signed in).
+ *
+ * Blocked until getUserUiLayout has reconciled for this mount AND the cache
+ * key is an II principal — otherwise a display-name localStorage blob from
+ * another account on the same browser can poison saveUserUiLayout.
  */
 function saveLayoutToBackend(
   actor: backendInterface | null,
-  userId: string,
+  storageUserId: string,
+  opts: {
+    backendBlobReconciled: boolean;
+    storageUserIdIsPrincipal: boolean;
+  },
+  legacyUserId?: string,
 ): void {
   if (!actor) return;
-  const layout = loadLayout(userId);
+  if (!shouldSaveLocalUiLayoutToBackend(opts)) return;
+  const layout = loadLayout(storageUserId, legacyUserId);
   const blob = JSON.stringify(layout);
   void (actor as UiLayoutActor)
     .saveUserUiLayout(blob)
@@ -439,12 +466,23 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
   // Backend actor for the authoritative uiLayout blob. Null when not signed in
   // (mock mode returns the shared mockBackend singleton, which is non-null).
   const { actor } = useActor();
+  const { identity } = useInternetIdentity();
+  const principalText = identity?.getPrincipal()?.toText?.() ?? "";
+  const storageUserId = resolveUiLayoutStorageUserId({
+    principalText,
+    passedUserId: userId,
+  });
+  const storageUserIdIsPrincipal = isPrincipalTextForUiLayout(storageUserId);
   // Second debounce timer for the BACKEND save (1500ms). The localStorage
   // saveDebounceRef stays at 500ms for instant cache paint; this one writes
   // the authoritative blob after the user stops dragging for ~1.5s.
   const backendSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // True after getUserUiLayout settles (ok blob, empty blob, or explicit empty
+  // parse). Stays false on transport failure so a name-keyed poison cache
+  // cannot be uploaded via saveUserUiLayout.
+  const backendBlobReconciledRef = useRef(false);
 
   // Load saved state on mount — bump instance ID on each mount.
   // localStorage paints FIRST (instant), then the backend blob reconciles if
@@ -452,7 +490,8 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
   useEffect(() => {
     panelInstanceIdRef.current += 1;
     const myInstance = panelInstanceIdRef.current;
-    const layout = loadLayout(userId);
+    backendBlobReconciledRef.current = false;
+    const layout = loadLayout(storageUserId, userId);
     if (layout[panelId]) {
       const saved = layout[panelId];
       setPosition({ x: saved.x, y: saved.y });
@@ -472,7 +511,12 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
         .then((blob: string) => {
           // LEAK-15: stale unmount guard
           if (panelInstanceIdRef.current !== myInstance) return;
-          if (!blob) return;
+          if (!blob) {
+            // Empty is authoritative for a new profile — allow principal-keyed
+            // local saves. Display-name keys remain blocked by the principal gate.
+            backendBlobReconciledRef.current = true;
+            return;
+          }
           let parsed: Record<
             string,
             { x: number; y: number; folded: boolean }
@@ -511,11 +555,13 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
           } catch {
             parsed = null;
           }
+          // Parsed or not, the fetch succeeded — reconcile complete.
+          backendBlobReconciledRef.current = true;
           if (!parsed) return;
-          // Write the full backend layout back to the localStorage cache.
+          // Write the full backend layout back to the principal-keyed cache.
           try {
             localStorage.setItem(
-              STORAGE_PREFIX + userId,
+              STORAGE_PREFIX + storageUserId,
               JSON.stringify(parsed),
             );
           } catch {
@@ -532,6 +578,7 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
         })
         .catch((err: unknown) => {
           // Backend load failed — keep the localStorage layout. Never throw.
+          // Leave reconciled=false so we do not upload a possibly foreign cache.
           console.warn(
             "DraggablePanel: getUserUiLayout failed, keeping localStorage layout",
             err,
@@ -547,7 +594,7 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
         backendSaveDebounceRef.current = null;
       }
     };
-  }, [panelId, userId, actor]);
+  }, [panelId, storageUserId, userId, actor]);
 
   const scheduleSave = useCallback(
     (pos: { x: number; y: number }, fold: boolean) => {
@@ -557,7 +604,16 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
       saveDebounceRef.current = setTimeout(() => {
         // LEAK-15: Guard against stale timeout from a previous panel instance
         if (panelInstanceIdRef.current !== myInstance) return;
-        saveLayout(userId, panelId, { x: pos.x, y: pos.y, folded: fold });
+        saveLayout(
+          storageUserId,
+          panelId,
+          {
+            x: pos.x,
+            y: pos.y,
+            folded: fold,
+          },
+          userId,
+        );
       }, 500);
 
       // Authoritative backend blob (1500ms debounce). Skipped when not signed
@@ -567,10 +623,18 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
         clearTimeout(backendSaveDebounceRef.current);
       backendSaveDebounceRef.current = setTimeout(() => {
         if (panelInstanceIdRef.current !== myInstance) return;
-        saveLayoutToBackend(actor, userId);
+        saveLayoutToBackend(
+          actor,
+          storageUserId,
+          {
+            backendBlobReconciled: backendBlobReconciledRef.current,
+            storageUserIdIsPrincipal,
+          },
+          userId,
+        );
       }, BACKEND_SAVE_DEBOUNCE_MS);
     },
-    [userId, panelId, actor],
+    [storageUserId, storageUserIdIsPrincipal, userId, panelId, actor],
   );
 
   const clampPosition = useCallback(
