@@ -11,7 +11,15 @@ import {
   ENEMY_SUMMON_CAP,
   MAP_MODIFIER_ARCANE_OVERFLOW_AP_DISCOUNT,
   MAP_MODIFIER_ARCANE_SURGE_AP_DISCOUNT,
+  MAP_MODIFIER_DOKA_FEVER_ENEMY_HP_BONUS,
+  MAP_MODIFIER_DOKA_FEVER_REWARD_MULTIPLIER,
+  MAP_MODIFIER_GLASS_REALM_DAMAGE_MULTIPLIER,
+  MAP_MODIFIER_IRON_CURSE_RES_BONUS,
   MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT,
+  MAP_MODIFIER_TITANS_VIGOR_HP_BONUS,
+  MAP_MODIFIER_TITANS_VIGOR_MAX_MULTIPLIER,
+  MAP_MODIFIER_TITANS_VIGOR_MIN_MULTIPLIER,
+  MAP_MODIFIER_VAMPIRIC_GROUND_LIFESTEAL_PERCENT,
   MAX_ENEMIES,
   PLAYER_BASE_AP,
   PLAYER_BASE_MP,
@@ -1304,6 +1312,162 @@ export function firstLevelStackedArcaneFrostCastsAtLeast(
   return null;
 }
 
+/**
+ * Titan's Vigor `onBattleStart` adds a flat 1000 HP to every combatant in
+ * `combatantsRef` (`mapModifiers.ts`). The player is not in that store
+ * (`playerTurnStartModifierTarget`). `onDamageDealt` then rolls 1–5× on
+ * `enemyTakesDamage` AFTER the RES chip-1 floor. Incoming Crush uses
+ * `playerTakesDamage` / melee `setCharacterStats` and never sees the roll.
+ */
+export const TITANS_VIGOR_HP_BONUS = MAP_MODIFIER_TITANS_VIGOR_HP_BONUS;
+export const TITANS_VIGOR_DMG_MIN = MAP_MODIFIER_TITANS_VIGOR_MIN_MULTIPLIER;
+export const TITANS_VIGOR_DMG_MAX = MAP_MODIFIER_TITANS_VIGOR_MAX_MULTIPLIER;
+export const GLASS_REALM_DMG_MULT = MAP_MODIFIER_GLASS_REALM_DAMAGE_MULTIPLIER;
+export const BATTLE_START_PLAYER_IN_COMBATANTS_REF = false;
+export const PLAYER_TAKES_DAMAGE_RUNS_APPLY_DAMAGE_DEALT = false;
+
+export function titansVigorHp(baseHp: number): number {
+  return Math.max(1, Math.floor(Number(baseHp) || 0)) + TITANS_VIGOR_HP_BONUS;
+}
+
+/**
+ * Live `enemyTakesDamage`: RES floor to ≥1, then `applyDamageDealt` multiplies.
+ * Titan's Vigor 1–5 and Glass Realm ×2 chain in registry order.
+ */
+export function damageAfterResThenMapMods(
+  raw: number,
+  enemyRes: number,
+  dmgMult: number,
+): number {
+  const afterRes = Math.max(
+    1,
+    Math.round(raw * Math.max(0, 1 - enemyRes / 100)),
+  );
+  return afterRes * Math.max(1, Math.floor(Number(dmgMult) || 1));
+}
+
+export function titansMaxChip1(): number {
+  return damageAfterResThenMapMods(20, 100, TITANS_VIGOR_DMG_MAX);
+}
+
+export function glassChip1(): number {
+  return damageAfterResThenMapMods(20, 100, GLASS_REALM_DMG_MULT);
+}
+
+export function titansGlassMaxChip1(): number {
+  return damageAfterResThenMapMods(
+    20,
+    100,
+    TITANS_VIGOR_DMG_MAX * GLASS_REALM_DMG_MULT,
+  );
+}
+
+export function firstLevelFrostDumpWithMultExceeds(
+  hp: number,
+  dmgMult: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(hp) || 0));
+  for (let level = 1; level <= limit; level++) {
+    const dump =
+      playerFrostCastsPerTurn(formulaAp(level)) *
+      damageAfterResThenMapMods(playerFrostRaw(0), 100, dmgMult);
+    if (dump >= need) return level;
+  }
+  return null;
+}
+
+/**
+ * Doka Fever HP bonus (`mapModifiers.ts`):
+ * `if (c.isEnemy ?? c.side === "enemy")`. Overworld `generateEnemies` never
+ * writes `side` or `isEnemy`, so the +25% is a no-op. The 2× Doka hook is
+ * still applied at victory (`WorldExploration.tsx` applyRewardMultiplier).
+ */
+export const DOKA_FEVER_HP_BONUS_FRACTION =
+  MAP_MODIFIER_DOKA_FEVER_ENEMY_HP_BONUS;
+export const DOKA_FEVER_REWARD_MULT = MAP_MODIFIER_DOKA_FEVER_REWARD_MULTIPLIER;
+export const OVERWORLD_SPAWN_SETS_SIDE = false;
+export const OVERWORLD_SPAWN_SETS_IS_ENEMY = false;
+
+export function dokaFeverAppliesHpBonus(combatant: {
+  isEnemy?: boolean;
+  side?: string;
+}): boolean {
+  return Boolean(combatant.isEnemy ?? combatant.side === "enemy");
+}
+
+export function dokaFeverHpBonus(baseHp: number): number {
+  return Math.floor(
+    Math.max(0, Math.floor(Number(baseHp) || 0)) * DOKA_FEVER_HP_BONUS_FRACTION,
+  );
+}
+
+/**
+ * Iron Curse `onBattleStart`: `res = floor(res * 1.3)` on combatantsRef
+ * (player absent). After RES 100 the factor is already 0, so 130% is a
+ * no-op on chip-1. Before that it pulls rook max-RES to 100 earlier.
+ */
+export const IRON_CURSE_RES_MULT = 1 + MAP_MODIFIER_IRON_CURSE_RES_BONUS;
+
+export function ironCursedRes(res: number): number {
+  return Math.floor(Math.max(0, Number(res) || 0) * IRON_CURSE_RES_MULT);
+}
+
+export function firstLevelIronCursedResCanHit100(
+  piece: ChessPieceType,
+): number | null {
+  for (let level = 1; level <= 400; level++) {
+    if (ironCursedRes(enemyStatBounds(level, piece).res.max) >= 100) {
+      return level;
+    }
+  }
+  return null;
+}
+
+/**
+ * `spawnSummonUnit` spreads `computeEnemyStats` (sp/sr/init/res/chc) — no
+ * `atk`. Hunter AI `findKitSpell` reads `summon.spells`, which spawn never
+ * copies from `summonKit`, so adjacent wolves melee. Executor:
+ * `calcScaledDamage(atk ?? level, level, 0)` → player.level. Enemy
+ * summoners pass `characterStats.level`, not the 999-capped pack level.
+ */
+export const SUMMON_SPAWN_SETS_ATK = false;
+export const SUMMON_SPAWN_COPIES_KIT_ONTO_SPELLS = false;
+
+export function summonMeleeRaw(playerLevel: number, atk?: number): number {
+  const lvl = Math.max(1, Math.floor(Number(playerLevel) || 1));
+  return calcScaledDamage(atk ?? lvl, lvl, 0);
+}
+
+export function firstPlayerLevelSummonMeleeExceeds(
+  raw: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(raw) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (summonMeleeRaw(level) >= need) return level;
+  }
+  return null;
+}
+
+/**
+ * Vampiric Ground `onDamageDealt` (`mapModifiers.ts`) does
+ * `attacker.hp += floor(damage * 0.15)`. Live `enemyTakesDamage` passes a
+ * throwaway `{hp, maxHp, id:"player"}` snapshot when the caster is the
+ * player (`WorldExploration.tsx`), so the heal never writes `characterStats`.
+ * Incoming Crush uses `playerTakesDamage` and never enters this hook.
+ * After RES 100, 15% of chip-1 floors to 0; Titans+Glass max chip-10 heals 1.
+ */
+export const VAMPIRIC_LIFESTEAL_FRACTION =
+  MAP_MODIFIER_VAMPIRIC_GROUND_LIFESTEAL_PERCENT;
+export const PLAYER_DAMAGE_DEALT_ATTACKER_IS_LIVE_STATS = false;
+
+export function vampiricHeal(damage: number): number {
+  return Math.floor(
+    Math.max(0, Number(damage) || 0) * VAMPIRIC_LIFESTEAL_FRACTION,
+  );
+}
+
 /** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
 export const HAZARD_LAVA_MIN = 8;
 export const HAZARD_LAVA_MAX = 15;
@@ -1684,7 +1848,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-10-24T00:20:00.000Z",
+    generatedAt: "2026-10-25T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -2454,6 +2618,102 @@ export function runLongHorizonSim() {
       ),
       firstLevel100FormulaCasts: firstLevelStackedArcaneFrostCastsAtLeast(100),
       firstLevel100TimestepCasts: firstLevelStackedArcaneFrostCastsAtLeast(50),
+    },
+    titansVigorAsymmetric: {
+      hpBonus: TITANS_VIGOR_HP_BONUS,
+      dmgMin: TITANS_VIGOR_DMG_MIN,
+      dmgMax: TITANS_VIGOR_DMG_MAX,
+      glassMult: GLASS_REALM_DMG_MULT,
+      playerInBattleStartCombatantsRef: BATTLE_START_PLAYER_IN_COMBATANTS_REF,
+      playerTakesDamageRunsApplyDamageDealt:
+        PLAYER_TAKES_DAMAGE_RUNS_APPLY_DAMAGE_DEALT,
+      enemyHpAt1: linearEnemyMaxHp(1),
+      enemyHpAt1WithTitans: titansVigorHp(linearEnemyMaxHp(1)),
+      enemyHpAt1030: linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      enemyHpAt1030WithTitans: titansVigorHp(
+        linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      ),
+      chip1: 1,
+      chip1TitansMax: titansMaxChip1(),
+      chip1Glass: glassChip1(),
+      chip1TitansGlassMax: titansGlassMaxChip1(),
+      frostDumpChip1At100000: playerFrostCastsPerTurn(formulaAp(100_000)),
+      frostDumpTitansMaxAt100000:
+        playerFrostCastsPerTurn(formulaAp(100_000)) * titansMaxChip1(),
+      firstLevelTitansMaxDumpExceedsDungeonCap:
+        firstLevelFrostDumpWithMultExceeds(
+          linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+          TITANS_VIGOR_DMG_MAX,
+        ),
+      firstLevelGlassDumpExceedsDungeonCap: firstLevelFrostDumpWithMultExceeds(
+        linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+        GLASS_REALM_DMG_MULT,
+      ),
+      firstLevelTitansGlassDumpExceedsDungeonCap:
+        firstLevelFrostDumpWithMultExceeds(
+          linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+          TITANS_VIGOR_DMG_MAX * GLASS_REALM_DMG_MULT,
+        ),
+    },
+    dokaFeverHpNoOp: {
+      hpBonusFraction: DOKA_FEVER_HP_BONUS_FRACTION,
+      rewardMult: DOKA_FEVER_REWARD_MULT,
+      overworldSpawnSetsSide: OVERWORLD_SPAWN_SETS_SIDE,
+      overworldSpawnSetsIsEnemy: OVERWORLD_SPAWN_SETS_IS_ENEMY,
+      appliesOnMissingSide: dokaFeverAppliesHpBonus({}),
+      appliesOnEnemySide: dokaFeverAppliesHpBonus({ side: "enemy" }),
+      appliesOnIsEnemyTrue: dokaFeverAppliesHpBonus({ isEnemy: true }),
+      bonusIfEligibleAt1: dokaFeverHpBonus(linearEnemyMaxHp(1)),
+      bonusIfEligibleAt1030: dokaFeverHpBonus(
+        linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      ),
+      rewardHookStillDoubles: true,
+    },
+    ironCurseEarlierChip1: {
+      resMult: IRON_CURSE_RES_MULT,
+      playerInBattleStartCombatantsRef: BATTLE_START_PLAYER_IN_COMBATANTS_REF,
+      rookRes100Uncursed: firstLevelResCanHit100("rook"),
+      rookRes100Cursed: firstLevelIronCursedResCanHit100("rook"),
+      kingRes100Uncursed: firstLevelResCanHit100("king"),
+      kingRes100Cursed: firstLevelIronCursedResCanHit100("king"),
+      cursedRookMaxAtUncursedBreakpoint: ironCursedRes(
+        enemyStatBounds(firstLevelResCanHit100("rook") ?? 78, "rook").res.max,
+      ),
+      chip1AfterRes100: damageAfterResThenMapMods(20, 130, 1),
+    },
+    summonMeleePlayerLevel: {
+      spawnSetsAtk: SUMMON_SPAWN_SETS_ATK,
+      spawnCopiesKitOntoSpells: SUMMON_SPAWN_COPIES_KIT_ONTO_SPELLS,
+      meleeAt1: summonMeleeRaw(1),
+      meleeAt44: summonMeleeRaw(44),
+      meleeAt1000: summonMeleeRaw(1000),
+      meleeAt2448: summonMeleeRaw(2448),
+      meleeAt2622: summonMeleeRaw(2622),
+      meleeAt100000: summonMeleeRaw(100_000),
+      capCrushRawAt1020: fallbackCrushRaw(1020),
+      dungeonCapHp: linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      firstPlayerLevelMeleeExceedsCapCrush: firstPlayerLevelSummonMeleeExceeds(
+        fallbackCrushRaw(1020),
+      ),
+      firstPlayerLevelMeleeOneShotsDungeonCap:
+        firstPlayerLevelSummonMeleeExceeds(
+          linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+        ),
+      playerHpAt2448: linearPlayerMaxHp(2448),
+      summonerChanceAt44: Math.min(1, summonerChance(44)),
+      spawnUsesCharacterLevel: true,
+    },
+    vampiricThrowawayAttacker: {
+      lifestealFraction: VAMPIRIC_LIFESTEAL_FRACTION,
+      playerAttackerIsLiveStats: PLAYER_DAMAGE_DEALT_ATTACKER_IS_LIVE_STATS,
+      playerTakesDamageRunsApplyDamageDealt:
+        PLAYER_TAKES_DAMAGE_RUNS_APPLY_DAMAGE_DEALT,
+      healFromFrostRaw: vampiricHeal(playerFrostRaw(0)),
+      healFromChip1: vampiricHeal(1),
+      healFromTitansMaxChip1: vampiricHeal(titansMaxChip1()),
+      healFromGlassChip1: vampiricHeal(glassChip1()),
+      healFromTitansGlassMaxChip1: vampiricHeal(titansGlassMaxChip1()),
+      firstNonZeroHealOnChip1Mult: 7,
     },
   };
 }

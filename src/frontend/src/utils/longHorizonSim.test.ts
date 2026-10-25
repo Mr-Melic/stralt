@@ -5,6 +5,7 @@ import {
 } from "./applyRewardsResult.ts";
 import {
   BATTLE_GRID_CELL_COUNT,
+  BATTLE_START_PLAYER_IN_COMBATANTS_REF,
   BETRAYAL_ENRAGE_MULT,
   BLOOD_MEND_CRIT_HEAL,
   BLOOD_MEND_HEAL,
@@ -13,6 +14,7 @@ import {
   CATALOG_BOSS_HP_SAMPLE,
   DOKA_HEAL_HP_PER_DOKA,
   ENEMY_SUMMON_CAP_SIM,
+  GLASS_REALM_DMG_MULT,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
   INITIATIVE_OVERLAY_ENEMY_CHC,
@@ -22,10 +24,12 @@ import {
   KIT_STRIKE_DAMAGE,
   LIFE_DRAIN_HEAL,
   MAX_ENEMIES_SIM,
+  OVERWORLD_SPAWN_SETS_SIDE,
   PLAYER_CREATE_EVASION,
   PLAYER_CREATE_INIT,
   PLAYER_CREATE_RESILIENCE,
   PLAYER_CREATE_SR,
+  PLAYER_DAMAGE_DEALT_ATTACKER_IS_LIVE_STATS,
   PLAYER_SUMMON_CAP_LIVE,
   PLAYER_TURN_START_COMMITS_MENDING_MIST,
   SHIELD_CHARM_ABSORB,
@@ -33,6 +37,8 @@ import {
   SUMMON_BOMBER_HP_SCALE,
   SUMMON_GUARDIAN_HP_SCALE,
   SUMMON_HUNTER_HP_SCALE,
+  SUMMON_SPAWN_SETS_ATK,
+  TITANS_VIGOR_DMG_MAX,
   WORLD_BOSS_LEVEL_OFFSET,
   WORLD_BOSS_SPAWN_RES_CLAMP,
   arcaneSurgeApCost,
@@ -43,7 +49,10 @@ import {
   catalogSummonMaxHp,
   crushOverKitRatio,
   damageAfterPlayerResPasses,
+  damageAfterResThenMapMods,
   deathDokaLost,
+  dokaFeverAppliesHpBonus,
+  dokaFeverHpBonus,
   dokaHealCostToFillFrom,
   dungeonMaxEnemyLevel,
   effectiveSpellRange,
@@ -69,7 +78,9 @@ import {
   firstLevelFormulaFrostCastsAtLeast,
   firstLevelFormulaMpAtLeast,
   firstLevelFormulaSummonCastsAtLeast,
+  firstLevelFrostDumpWithMultExceeds,
   firstLevelHazardMaxBelowHpPercent,
+  firstLevelIronCursedResCanHit100,
   firstLevelLinearHpNotSafeInteger,
   firstLevelResCanHit100,
   firstLevelSpellFailHitsZero,
@@ -86,6 +97,7 @@ import {
   firstPlayerLevelPotionBeatsFlatDokaHeal,
   firstPlayerLevelSacrificeRawExceeds,
   firstPlayerLevelSummonMaxInitExceedsCreate,
+  firstPlayerLevelSummonMeleeExceeds,
   firstPlayerLevelSummonResCanHit100,
   firstPlayerLevelSurvivesCrushRecv,
   firstPlayerLevelWorldBossStatCanHit100,
@@ -94,9 +106,11 @@ import {
   formulaAp,
   formulaMp,
   frostCastsWithTimestepRefill,
+  glassChip1,
   groundDokaMean,
   healthPotionDokaPerHp,
   healthPotionHpRestored,
+  ironCursedRes,
   jackpotPersistIfHit,
   jackpotUnclampedMean,
   kitCastRaw,
@@ -136,7 +150,12 @@ import {
   starterTimestepApCost,
   starterTimestepCooldownTurns,
   starterTimestepIsOncePerBattle,
+  summonMeleeRaw,
   summonerChance,
+  titansGlassMaxChip1,
+  titansMaxChip1,
+  titansVigorHp,
+  vampiricHeal,
   victoryHpFloor,
   worldBossChip1FrostTurns,
   worldBossEnemyLevel,
@@ -572,5 +591,83 @@ assert.equal(firstLevelStackedArcaneFrostCastsAtLeast(50), 1050);
 assert.equal(report.stackedArcaneFrostDump.frostCostAfterStack, 1);
 assert.equal(report.stackedArcaneFrostDump.formulaCastsAt100000, 4008);
 assert.equal(report.stackedArcaneFrostDump.firstLevel100TimestepCasts, 1050);
+
+assert.equal(BATTLE_START_PLAYER_IN_COMBATANTS_REF, false);
+assert.equal(titansVigorHp(linearEnemyMaxHp(1)), 1050);
+assert.equal(titansVigorHp(linearEnemyMaxHp(dungeonMaxEnemyLevel())), 3622);
+assert.equal(titansMaxChip1(), 5);
+assert.equal(glassChip1(), 2);
+assert.equal(titansGlassMaxChip1(), 10);
+assert.equal(damageAfterResThenMapMods(21, 100, 1), 1);
+assert.equal(
+  firstLevelFrostDumpWithMultExceeds(
+    linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+    TITANS_VIGOR_DMG_MAX,
+  ),
+  39175,
+);
+assert.equal(
+  firstLevelFrostDumpWithMultExceeds(
+    linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+    GLASS_REALM_DMG_MULT,
+  ),
+  98125,
+);
+assert.equal(
+  firstLevelFrostDumpWithMultExceeds(
+    linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+    TITANS_VIGOR_DMG_MAX * GLASS_REALM_DMG_MULT,
+  ),
+  19525,
+);
+assert.equal(report.titansVigorAsymmetric.enemyHpAt1WithTitans, 1050);
+assert.equal(report.titansVigorAsymmetric.chip1TitansGlassMax, 10);
+assert.equal(
+  report.titansVigorAsymmetric.playerInBattleStartCombatantsRef,
+  false,
+);
+
+assert.equal(OVERWORLD_SPAWN_SETS_SIDE, false);
+assert.equal(dokaFeverAppliesHpBonus({}), false);
+assert.equal(dokaFeverAppliesHpBonus({ side: "enemy" }), true);
+assert.equal(dokaFeverAppliesHpBonus({ isEnemy: true }), true);
+assert.equal(dokaFeverHpBonus(linearEnemyMaxHp(1)), 12);
+assert.equal(dokaFeverHpBonus(linearEnemyMaxHp(dungeonMaxEnemyLevel())), 655);
+assert.equal(report.dokaFeverHpNoOp.appliesOnMissingSide, false);
+assert.equal(report.dokaFeverHpNoOp.rewardHookStillDoubles, true);
+
+assert.equal(firstLevelResCanHit100("rook"), 78);
+assert.equal(firstLevelIronCursedResCanHit100("rook"), 59);
+assert.equal(firstLevelIronCursedResCanHit100("king"), 81);
+assert.equal(ironCursedRes(100), 130);
+assert.equal(report.ironCurseEarlierChip1.rookRes100Cursed, 59);
+assert.equal(report.ironCurseEarlierChip1.chip1AfterRes100, 1);
+
+assert.equal(SUMMON_SPAWN_SETS_ATK, false);
+assert.equal(summonMeleeRaw(1), 1);
+assert.equal(summonMeleeRaw(44), 44);
+assert.equal(summonMeleeRaw(100_000), 100_000);
+assert.equal(fallbackCrushRaw(1020), 2448);
+assert.equal(firstPlayerLevelSummonMeleeExceeds(fallbackCrushRaw(1020)), 2448);
+assert.equal(
+  firstPlayerLevelSummonMeleeExceeds(linearEnemyMaxHp(dungeonMaxEnemyLevel())),
+  2622,
+);
+assert.equal(report.summonMeleePlayerLevel.meleeAt100000, 100_000);
+assert.equal(
+  report.summonMeleePlayerLevel.firstPlayerLevelMeleeExceedsCapCrush,
+  2448,
+);
+assert.equal(linearPlayerMaxHp(2448), 12335);
+
+assert.equal(PLAYER_DAMAGE_DEALT_ATTACKER_IS_LIVE_STATS, false);
+assert.equal(vampiricHeal(playerFrostRaw(0)), 3);
+assert.equal(vampiricHeal(1), 0);
+assert.equal(vampiricHeal(titansMaxChip1()), 0);
+assert.equal(vampiricHeal(glassChip1()), 0);
+assert.equal(vampiricHeal(titansGlassMaxChip1()), 1);
+assert.equal(vampiricHeal(7), 1);
+assert.equal(report.vampiricThrowawayAttacker.healFromChip1, 0);
+assert.equal(report.vampiricThrowawayAttacker.healFromTitansGlassMaxChip1, 1);
 
 console.log("longHorizonSim.test: ok");
