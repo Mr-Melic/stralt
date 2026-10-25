@@ -168,6 +168,15 @@ describe("sprite / spell / enemy field bridges", () => {
     assert.equal(ui.summonLifespan, 0);
   });
 
+  it("round-trips effectParams JSON that combat never parses (AFDA-2026-10-25-043)", () => {
+    const json = '{"attractDistance":2,"attractAll":true}';
+    const wire = toBackendSpellConfig({
+      id: "void_collapse",
+      effectParams: json,
+    });
+    assert.equal(wire.effectParams, json);
+  });
+
   it("keeps explicit summon metadata and drops extra unit-def keys", () => {
     const wire = toBackendSpellConfig({
       id: "summon-wolf",
