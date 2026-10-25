@@ -273,6 +273,13 @@ type SpellBridgeFields = {
   summonAI?: string;
   summonLifespan?: number | bigint;
   summonUnitDef?: SummonUnitBridge | null;
+  /**
+   * Candid `?Text`. Admin Spells stores JSON here (`{"pushDistance":2}`).
+   * Combat never parses it — occupancy `applyPushback` / `applyAttract`
+   * have no WorldExploration caller (AFDA-2026-10-25-043). Distinct from
+   * 018 (isBarrier / isSwap flags are not on Candid at all).
+   */
+  effectParams?: string | null;
 };
 
 function natOf(value: number | bigint | undefined | null): bigint {
@@ -302,6 +309,17 @@ export function toBackendSummonUnitDef(
   };
 }
 
+/**
+ * Maps dashboard SpellConfig onto Candid (`hitsMultiple` → `multiTarget`,
+ * summon fields, cooldown). Remaining fields including `effectParams` are
+ * spread onto the wire.
+ *
+ * Combat never JSON.parses `effectParams` (`pushDistance` /
+ * `attractDistance` / `teleportMode`). Motoko `void_collapse` seeds
+ * `{"attractDistance":2,"attractAll":true}` that is stored unused
+ * (AFDA-2026-10-25-043). Distinct from 018. Do not infer mechanics from
+ * the spell name.
+ */
 export function toBackendSpellConfig<T extends SpellBridgeFields>(
   config: T,
 ): T & {
