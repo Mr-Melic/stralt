@@ -19,6 +19,7 @@
 
 import type { ChessPieceType } from "../types/gameTypes";
 import { logDebugError } from "../utils/debugLogger";
+import { strokeOwnerTint } from "./ownerTintStroke";
 
 // Re-export so existing call sites can import ChessPieceType from here.
 export type { ChessPieceType };
@@ -780,34 +781,6 @@ function drawPatternInline(
       );
     }
   }
-}
-
-/**
- * Stroke an owner-tinted outline around a creature's pixel footprint. This
- * REPLACES the old renderSummonAura green rectangle: player-side summons get
- * a green tint, enemy-side summons get a red tint, drawn as part of the
- * unified dispatch instead of a separate call site.
- */
-function strokeOwnerTint(
-  ctx: CanvasRenderingContext2D,
-  pattern: number[][],
-  x: number,
-  y: number,
-  tint: string,
-  scale: { x: number; y: number },
-): void {
-  const pixelSize = 3;
-  const patternWidth = pattern[0].length * pixelSize * scale.x;
-  const patternHeight = pattern.length * pixelSize * scale.y;
-  const startX = Math.round(x - patternWidth / 2);
-  const startY = Math.round(y - patternHeight / 2);
-  ctx.save();
-  ctx.strokeStyle = tint;
-  ctx.lineWidth = 2;
-  ctx.shadowColor = tint;
-  ctx.shadowBlur = 8;
-  ctx.strokeRect(startX - 1, startY - 1, patternWidth + 2, patternHeight + 2);
-  ctx.restore();
 }
 
 /**
