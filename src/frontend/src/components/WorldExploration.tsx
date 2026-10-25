@@ -170,6 +170,10 @@ import {
 } from "../engine/mapGen";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
+  planMirrorFieldReflectedHit,
+  shouldMirrorFieldReflect,
+} from "../engine/mirrorFieldReflectHit";
+import {
   type OccupancyContext,
   collectMandatoryProgressionCells,
   resolveControlledSummonMoveDest,
@@ -9540,25 +9544,43 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         _gridPos: { x: number; y: number },
         preCritDmgBM: number,
       ) => {
-        // Inline Mirror Field 20% reflect: 20% chance to reflect back at player.
-        if (Math.random() * 100 < 20) {
-          setCharacterStats((prev: any) => ({
-            ...prev,
-            hp: Math.max(0, prev.hp - preCritDmgBM),
-          }));
-          if (preCritDmgBM > 0) {
-            challengeTotalDamageRef.current = recordChallengeDamageTaken(
-              challengeTotalDamageRef.current,
-              preCritDmgBM,
-            );
-          }
+        // Mirror Field 20% reflect. Raw preCritDmgBM used to skip RES and
+        // Shield Charm that playerTakesDamage applies to enemy spells, so
+        // Untouchable failed on a packet the shield would have soaked.
+        if (!shouldMirrorFieldReflect(Math.random() * 100)) return false;
+        const hit = planMirrorFieldReflectedHit({
+          incoming: preCritDmgBM,
+          hp: characterStatsRef.current.hp,
+          res: Number(characterStatsRef.current.res),
+          resModifier: getStatModifier(
+            "player",
+            "res",
+            activeEffectsRef.current,
+          ),
+          shieldHp: shieldHpRef.current,
+        });
+        shieldHpRef.current = hit.remainingShield;
+        setCharacterStats((prev: any) => ({
+          ...prev,
+          hp: hit.newHp,
+        }));
+        if (hit.shieldAbsorb > 0) {
           logBattleEntry(
-            `Mirror Field reflects ${preCritDmgBM} damage back at you!`,
-            "#c084fc",
+            `Shield absorbed ${hit.shieldAbsorb} damage`,
+            "#a855f7",
           );
-          return true;
         }
-        return false;
+        if (hit.challengeDamage > 0) {
+          challengeTotalDamageRef.current = recordChallengeDamageTaken(
+            challengeTotalDamageRef.current,
+            hit.challengeDamage,
+          );
+        }
+        logBattleEntry(
+          `Mirror Field reflects ${hit.hpLost} damage back at you!`,
+          "#c084fc",
+        );
+        return true;
       },
       paperWindstormMiss: (_spell: any, _gridPos: { x: number; y: number }) => {
         // Inline Paper Windstorm miss: 30% chance to miss.
