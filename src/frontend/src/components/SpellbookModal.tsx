@@ -16,6 +16,7 @@ import {
   spellHighlightRangeBase,
 } from "../engine/targeting";
 import type { Enemy, SpellConfig } from "../types/gameTypes";
+import { SPELLBOOK_MOBILE_TOUCH_CLASS } from "../utils/spellbookTouchTarget.ts";
 
 interface SpellbookModalProps {
   allSpells: SpellConfig[];
@@ -1052,6 +1053,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
                         <button
                           type="button"
                           data-ocid={`spellbook.upgrade_toggle.${idx + 1}`}
+                          className={SPELLBOOK_MOBILE_TOUCH_CLASS}
                           onClick={() =>
                             setExpandedSpellId(isExpanded ? null : spell.id)
                           }
@@ -1154,6 +1156,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
                             <button
                               type="button"
                               data-ocid={`spellbook.upgrade_button.${idx + 1}`}
+                              className={SPELLBOOK_MOBILE_TOUCH_CLASS}
                               disabled={!canAfford}
                               onClick={() => {
                                 if (canAfford && onUpgradeSpell) {
@@ -1213,6 +1216,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
           <button
             type="button"
             data-ocid="spellbook.cancel_button"
+            className={SPELLBOOK_MOBILE_TOUCH_CLASS}
             onClick={onClose}
             style={{
               padding: "8px 18px",
@@ -1230,6 +1234,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
           <button
             type="button"
             data-ocid="spellbook.confirm_button"
+            className={SPELLBOOK_MOBILE_TOUCH_CLASS}
             onClick={handleConfirmAll}
             style={{
               padding: "8px 22px",
@@ -1308,6 +1313,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
               <button
                 type="button"
                 data-ocid="spellbook.confirm_swap.cancel_button"
+                className={SPELLBOOK_MOBILE_TOUCH_CLASS}
                 onClick={cancelSwap}
                 style={{
                   padding: "7px 18px",
@@ -1325,6 +1331,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
               <button
                 type="button"
                 data-ocid="spellbook.confirm_swap.confirm_button"
+                className={SPELLBOOK_MOBILE_TOUCH_CLASS}
                 onClick={confirmSwap}
                 style={{
                   padding: "7px 18px",
