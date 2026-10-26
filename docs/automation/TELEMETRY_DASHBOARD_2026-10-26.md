@@ -45,8 +45,12 @@ written, [#1108](https://github.com/Mr-Melic/stralt/pull/1108) TBC,
 [#1109](https://github.com/Mr-Melic/stralt/pull/1109) engine extract,
 [#1110](https://github.com/Mr-Melic/stralt/pull/1110) VAL,
 [#1111](https://github.com/Mr-Melic/stralt/pull/1111) enemy-boss,
-[#1112](https://github.com/Mr-Melic/stralt/pull/1112) expansion, and
-[#1113](https://github.com/Mr-Melic/stralt/pull/1113) tests opened.
+[#1112](https://github.com/Mr-Melic/stralt/pull/1112) expansion,
+[#1113](https://github.com/Mr-Melic/stralt/pull/1113) tests,
+[#1114](https://github.com/Mr-Melic/stralt/pull/1114) WDD,
+[#1115](https://github.com/Mr-Melic/stralt/pull/1115) admin helpers,
+[#1116](https://github.com/Mr-Melic/stralt/pull/1116) GTAD, and
+[#1117](https://github.com/Mr-Melic/stralt/pull/1117) emergent meta opened.
 Later swarm expected.
 
 ---
@@ -228,7 +232,7 @@ opened, `main` still did not move. Additional **open** drafts that are
 | :--- | :--- | :--- |
 | #345 / #424 / #455 / #504 / #559 / #616 / #668 / #750 / #801 / #827 / #879 / #936 / #988 / **#1048** | Prior TADD matrices, same SHA | **One** H1–H14 spec. Union docs; do not concatenate UI. |
 | #333 / #395 / #462 / #502 / #556 / #582 / #609 / #640 / #661 / #725 / #768 / #833 / #871 / #928 / #994 / #1053 / **#1108** TBC | WAITING_FOR_TELEMETRY / balance analysis, 0 rows | Do not paint as zero battles. |
-| #352 / #422 / #450 / #527 / #583 / #641 / #682 / #722 / #806 / #816 / #884 / #931 / #981 / **#1047** GTAD | Architecture + Phase 1 extras | AQA-012 seven counters only. |
+| #352 / #422 / #450 / #527 / #583 / #641 / #682 / #722 / #806 / #816 / #884 / #931 / #981 / #1047 / **#1116** GTAD | Architecture + Phase 1 extras | AQA-012 seven counters only. |
 | #355 / #418 / #461 / #520 / #586 / #624 / #694 / #715 / #782 / #835 / #880 / #930 / #990 / #1051 / **#1110** VAL | Visual library design | No custom-URL loader. No `CUSTOM_FALLBACK` series. |
 | #371 / #480 / #533 / #590 / #646 / #679 / #802 / #837 / #893 / #906 / #962 / #1017 / **#1082** SDE | Observe→win design | No `observedSpellIds` / `ownedSpellIds` persist. |
 | Formations / elites / AI docs through #941 / #956 / #958 / #997 / #999 / #1005 / **#1072** / **#1073** / **#1075** | Design copies | No encounter / elite / archetype usage charts. |
@@ -236,7 +240,7 @@ opened, `main` still did not move. Additional **open** drafts that are
 | #398 / #473 / #515 / #570 / #630 / #677 / #729 / #791 / #815 / #892 / #940 / #1007 / **#1078** SDA | Spell/discovery admin re-audit | Catalog UX, not a discovery store. |
 | **#1044–#1047** (same-hour 10-25 leftovers #1048 did not number) | Enemy-boss #1044 / remount #1045–#1046 / GTAD #1047 | Not increment maps. #1047 is architecture, not a sidecar. |
 | **#1049–#1107** (rest of 10-25 after #1048) | Emergent meta #1049 / world admin #1050 / VAL #1051 / expansion #1052 / TBC #1053 / combat kit-share #1054 / admin drift #1055 / encounters #1056 / dead-code #1057 / combat #1058 / perf #1059 / UX #1060 / GFCF #1061 / MIMA #1062 / spell proposals #1063 / WDD #1064 / tests #1065 / admin helpers #1066 / PX #1067 / a11y #1068 / diversity #1069 / remount #1070 / map snap #1071 / AI #1072 / elites #1073 / MTD #1074 / formations #1075 / engine extract #1076 / LHIPS #1077 / SDA #1078 / later remount-combat-map-test through #1107 (incl. weekly quality audit #1106) | Not collectors. Do not scrape tests, kit-share, remount PRs, #961/#995/#1076 extracts, or #1051 VAL as telemetry / custom-URL load. |
-| Same-hour 10-26 copies | Dated copies: **0** at ~00:03Z inspect; while writing, **#1108** TBC / **#1109** engine extract / **#1110** VAL / **#1111** enemy-boss / **#1112** expansion / **#1113** tests. Later swarm expected. | Same fence. Do not scrape #1109/#961/#995/#1076 extracts as a custom-URL loader. |
+| Same-hour 10-26 copies | Dated copies: **0** at ~00:03Z inspect; while writing, **#1108** TBC / **#1109** engine extract / **#1110** VAL / **#1111** enemy-boss / **#1112** expansion / **#1113** tests / **#1114** WDD / **#1115** admin helpers / **#1116** GTAD / **#1117** emergent meta. Later swarm expected. | Same fence. Do not scrape #1109/#961/#995/#1076 extracts as a custom-URL loader. #1116 is architecture, not a sidecar. |
 
 ---
 
