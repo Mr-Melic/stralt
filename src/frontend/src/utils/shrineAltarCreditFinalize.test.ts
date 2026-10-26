@@ -1,10 +1,10 @@
 /**
- * Persist race: shrine altar finalize-before-settle vs release retry.
+ * Persist race: shrine altar room-close-before-settle vs release retry.
  *
- * Sequence: dungeon-chain shrine room → pure-path walk onto altar →
- * applyRewards(300) returns `#err` (banned / empty slot / unauthorized).
- * Live closes the room and advances shrine_count / covenant before settle;
- * releaseFlag cannot reopen the altar.
+ * Sequence: dungeon-chain shrine room → walk onto altar → applyRewards(300)
+ * returns `#err` (banned / empty slot / unauthorized). Live closes the room
+ * before settle; releaseFlag cannot reopen the altar. Visit count still
+ * fires on first contact (#1083) and must not double on a Doka retry.
  */
 
 import assert from "node:assert/strict";
@@ -18,10 +18,14 @@ import {
   tryClaimFlag,
 } from "./dokaPersist.ts";
 import {
-  liveWxCanRetryDungeonChainBonusAfterRelease,
+  liveWxClosesShrineRoomBeforeSettle,
   liveWxFinalizesShrineAltarBeforeSettle,
+  planShrineAltarAfterSettle,
+  planShrineAltarContact,
+  shouldCloseShrineAltarAfterSettle,
+  shouldCountShrineVisitOnAltarContact,
   shouldFinalizeShrineAltarVisit,
-  shouldRetryDungeonChainBonusAfterSettle,
+  shouldRetryShrineAltarCredit,
 } from "./shrineAltarCreditFinalize.ts";
 
 function wxSource(): string {
@@ -34,37 +38,45 @@ function wxSource(): string {
   );
 }
 
-describe("shrine altar finalize vs one-shot settle", () => {
-  it("finalizes on commit and keep, not on release", () => {
-    assert.equal(shouldFinalizeShrineAltarVisit("commit"), true);
-    assert.equal(shouldFinalizeShrineAltarVisit("keep"), true);
-    assert.equal(shouldFinalizeShrineAltarVisit("release"), false);
-    assert.equal(shouldFinalizeShrineAltarVisit({ kind: "commit" }), true);
-    assert.equal(shouldFinalizeShrineAltarVisit({ kind: "release" }), false);
+describe("shrine altar room-close vs one-shot settle", () => {
+  it("closes the room on commit and keep, not on release", () => {
+    assert.equal(shouldCloseShrineAltarAfterSettle("commit"), true);
+    assert.equal(shouldCloseShrineAltarAfterSettle("keep"), true);
+    assert.equal(shouldCloseShrineAltarAfterSettle("release"), false);
+    assert.equal(shouldRetryShrineAltarCredit("release"), true);
+    assert.equal(shouldRetryShrineAltarCredit("keep"), false);
+    assert.equal(shouldCloseShrineAltarAfterSettle({ kind: "commit" }), true);
+    assert.equal(shouldCloseShrineAltarAfterSettle({ kind: "release" }), false);
+    assert.equal(
+      shouldFinalizeShrineAltarVisit("release"),
+      false,
+      "deprecated alias tracks close-room, not visit-count",
+    );
   });
 
   it("maps explicit applyRewards #err to release (retry-safe)", () => {
     assert.equal(settleOneShotAfterCredit({ err: "rejected" }), "release");
     assert.equal(
-      shouldFinalizeShrineAltarVisit(
+      shouldCloseShrineAltarAfterSettle(
         settleOneShotAfterCredit({ err: "rejected" }),
       ),
       false,
     );
     assert.equal(
-      shouldFinalizeShrineAltarVisit(
+      shouldCloseShrineAltarAfterSettle(
         settleOneShotAfterCredit({ err: "transport" }),
       ),
       true,
       "transport-keep must still close the room (no remint)",
     );
     assert.equal(
-      shouldFinalizeShrineAltarVisit(settleOneShotAfterCredit({ ok: 300 })),
+      shouldCloseShrineAltarAfterSettle(settleOneShotAfterCredit({ ok: 300 })),
       true,
     );
   });
 
-  it("live WX finalizes the shrine visit before settle returns", () => {
+  it("live WX closes the shrine room before settle returns", () => {
+    assert.equal(liveWxClosesShrineRoomBeforeSettle(), true);
     assert.equal(liveWxFinalizesShrineAltarBeforeSettle(), true);
     const wx = wxSource();
     const altar = wx.indexOf("if (tryClaimFlag(shrineRewardClaimedRef))");
@@ -76,29 +88,26 @@ describe("shrine altar finalize vs one-shot settle", () => {
     assert.match(block, /shrineAchievementRef\.current \+= 1/);
     assert.match(block, /isShrineRoomRef\.current = false/);
     assert.match(block, /setShrineCompleted\(true\)/);
-    // Finalize is NOT gated on shouldFinalizeShrineAltarVisit yet.
-    assert.equal(block.includes("shouldFinalizeShrineAltarVisit"), false);
-    // Covenant / achievement / room-close sit outside the enqueue callback.
+    assert.equal(block.includes("planShrineAltarAfterSettle"), false);
+    assert.equal(block.includes("shouldCloseShrineAltarAfterSettle"), false);
     const enqueueClose = block.indexOf(
       'return settle.kind === "commit" ? settle.doka : 0;',
     );
     assert.ok(enqueueClose > 0, "enqueue settle return is present");
     const afterEnqueue = block.slice(enqueueClose);
-    assert.match(afterEnqueue, /shrineAchievementRef\.current \+= 1/);
     assert.match(afterEnqueue, /isShrineRoomRef\.current = false/);
+    assert.match(afterEnqueue, /setShrineCompleted\(true\)/);
   });
 
   it("releaseFlag only retries when the shrine room stays open", () => {
-    // Sequence: altar step → #err release → live already closed the room.
     const claimed = { current: false };
     const shrineRoomOpen = { current: true };
     assert.equal(tryClaimFlag(claimed), true);
-    // Live finalizes immediately (before settle).
-    assert.equal(liveWxFinalizesShrineAltarBeforeSettle(), true);
+    assert.equal(liveWxClosesShrineRoomBeforeSettle(), true);
     shrineRoomOpen.current = false;
     const settle = settleOneShotAfterCredit({ err: "rejected" });
     assert.equal(settle, "release");
-    if (!shouldFinalizeShrineAltarVisit(settle)) {
+    if (planShrineAltarAfterSettle(settle).releaseCreditClaim) {
       releaseFlag(claimed);
     }
     assert.equal(claimed.current, false, "flag released for retry");
@@ -107,7 +116,6 @@ describe("shrine altar finalize vs one-shot settle", () => {
       false,
       "live already closed the room — release cannot reopen it",
     );
-    // Stepping the altar again is gated on isShrineRoomRef in WX.
     const canRetryAltar = shrineRoomOpen.current && tryClaimFlag(claimed);
     assert.equal(
       canRetryAltar,
@@ -116,41 +124,76 @@ describe("shrine altar finalize vs one-shot settle", () => {
     );
   });
 
-  it("correct finalize keeps the room open on release so retry works", () => {
+  it("correct settle keeps the room open on release so retry works", () => {
     const claimed = { current: false };
-    const shrineRoomOpen = { current: true };
+    let shrineRoomOpen = true;
+    const contact = planShrineAltarContact({
+      shrineRoomOpen,
+      creditAlreadyClaimed: claimed.current,
+      visitAlreadyCounted: false,
+    });
+    assert.equal(contact.claimCredit, true);
+    assert.equal(contact.closeRoomNow, false);
     assert.equal(tryClaimFlag(claimed), true);
     const settle = settleOneShotAfterCredit({ err: "rejected" });
-    if (shouldFinalizeShrineAltarVisit(settle)) {
-      shrineRoomOpen.current = false;
-    } else {
-      releaseFlag(claimed);
-    }
-    assert.equal(shrineRoomOpen.current, true);
+    const after = planShrineAltarAfterSettle(settle);
+    if (after.closeRoom) shrineRoomOpen = false;
+    if (after.releaseCreditClaim) releaseFlag(claimed);
+    assert.equal(shrineRoomOpen, true);
     assert.equal(claimed.current, false);
+    const retry = planShrineAltarContact({
+      shrineRoomOpen,
+      creditAlreadyClaimed: claimed.current,
+      visitAlreadyCounted: true,
+    });
+    assert.equal(retry.claimCredit, true);
+    assert.equal(retry.countVisit, false, "visit already counted this room");
+    assert.equal(retry.closeRoomNow, false);
+    assert.equal(tryClaimFlag(claimed), true);
+  });
+
+  it("visit count fires once on contact even when Doka later releases", () => {
+    assert.equal(shouldCountShrineVisitOnAltarContact(false), true);
+    assert.equal(shouldCountShrineVisitOnAltarContact(true), false);
+    const first = planShrineAltarContact({
+      shrineRoomOpen: true,
+      creditAlreadyClaimed: false,
+      visitAlreadyCounted: false,
+    });
+    assert.equal(first.countVisit, true);
+    assert.equal(first.closeRoomNow, false);
+    const settle = planShrineAltarAfterSettle(
+      settleOneShotAfterCredit({ err: "rejected" }),
+    );
+    assert.equal(settle.closeRoom, false);
+    const retry = planShrineAltarContact({
+      shrineRoomOpen: true,
+      creditAlreadyClaimed: false,
+      visitAlreadyCounted: true,
+    });
     assert.equal(
-      shrineRoomOpen.current && tryClaimFlag(claimed),
-      true,
-      "open room + released flag must allow a second altar credit",
+      retry.countVisit,
+      false,
+      "#1083 visit-on-contact must not double when loot retries",
     );
   });
 
-  it("dungeon-chain complete release cannot re-pay that run (live)", () => {
-    assert.equal(liveWxCanRetryDungeonChainBonusAfterRelease(), false);
-    assert.equal(shouldRetryDungeonChainBonusAfterSettle("release"), true);
-    assert.equal(shouldRetryDungeonChainBonusAfterSettle("keep"), false);
-    const wx = wxSource();
-    const complete = wx.indexOf(
-      "tryClaimDungeonChainBonus(dungeonCompletionSavedRef)",
+  it("closed or already-claimed contact is a no-op for credit", () => {
+    assert.deepEqual(
+      planShrineAltarContact({
+        shrineRoomOpen: false,
+        creditAlreadyClaimed: false,
+        visitAlreadyCounted: false,
+      }),
+      { claimCredit: false, countVisit: false, closeRoomNow: false },
     );
-    assert.ok(complete >= 0, "dungeon complete claim call is present");
-    const block = wx.slice(complete, complete + 1600);
-    assert.match(block, /releaseFlag\(dungeonCompletionSavedRef\)/);
-    assert.match(block, /dungeonChainActiveRef\.current = false/);
-    // Chain zero runs in the same portal step as the enqueue, not after settle.
-    assert.equal(
-      block.includes("shouldRetryDungeonChainBonusAfterSettle"),
-      false,
+    assert.deepEqual(
+      planShrineAltarContact({
+        shrineRoomOpen: true,
+        creditAlreadyClaimed: true,
+        visitAlreadyCounted: true,
+      }),
+      { claimCredit: false, countVisit: false, closeRoomNow: false },
     );
   });
 });
