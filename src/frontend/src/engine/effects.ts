@@ -3,6 +3,7 @@
 // hit-flash, and hit-stop. Does NOT touch turn logic, damage math, or state flow.
 
 import { JUICE } from "@/data/gameConstants";
+import { shouldSkipEffectsSimulation } from "./effectsTickActivity";
 
 export type DamageKind = "damage" | "heal" | "drain" | "crit";
 
@@ -97,6 +98,24 @@ export class EffectsManager {
   }
 
   tick(dt: number): void {
+    // PERF-2026-10-26-183: idle overworld still paid survivors + four filter()
+    // allocations every RAF. Skip only when shake / flash / hit-stop / live
+    // juice are all empty. Do not change TTL or floater motion.
+    if (
+      shouldSkipEffectsSimulation({
+        shakeIntensity: this.shakeState.intensity,
+        hitFlashCount: this.hitFlashUntil.size,
+        hitStopActive: this.timeScaleRef.current === 0.0,
+        activeCount: this.activeEffects.length,
+        damageCount: this.damageNumbers.length,
+        deathCount: this.dyingEntities.length,
+        dokaCount: this.dokaFloatTexts.length,
+        floatCount: this.floatTexts.length,
+      })
+    ) {
+      return;
+    }
+
     // Shake decay each frame.
     this.shakeState.intensity *= this.shakeState.decay;
     if (this.shakeState.intensity < 0.01) this.shakeState.intensity = 0;
