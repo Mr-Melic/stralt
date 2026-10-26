@@ -1,6 +1,6 @@
 # ACTION_IDs — 2026-10-26 (Player Experience Coherence Auditor)
 
-**Source:** Player Experience Coherence Auditor (`bc-16765ec2-025d-5940-b252-a6a1974ff3f0`)  
+**Source:** Player Experience Coherence Auditor (`30118f7c-a49e-11f1-a7d1-d6b4613131ce`)  
 **HEAD:** `0f5363f` (`Merge pull request #332`)  
 **Narrative:** [`PX_COHERENCE_AUDIT_2026-10-26.md`](./PX_COHERENCE_AUDIT_2026-10-26.md)
 
@@ -24,11 +24,11 @@ Prior PX records remain **open** unless noted. Do not re-file:
 - `PXA-2026-10-24-001` … `003` (PR **#1008** — player SP inbound on enemy spells + RES twice; `easy_1` “healing spells” vs any restore; Iron Skin/Haste/Enrage “own” vs ally)
 - `PXA-2026-10-25-001` … `003` (PR **#1067** — gifted `hitsMultiple` vs cards; Haste +2 unread on restore / summon budget; turn-limit HUD never Failed)
 
-Sibling same-day signature hunt (unmerged workspace docs `*_SIGNATURE.md`) claims `PXA-2026-10-26-004` … `006` (Mirror arming / Mark empty-floor / Strike FAIL unnamed). This file owns **001–003** only. Do not renumber across hunts.
+This file is the **union** of the same-day hunts on `0f5363f`: **001–003** (Bomber / dungeon Depth / hard_3 HUD), **004–006** (Mirror arming / Mark empty-floor / Strike FAIL unnamed), **007** (Wisp healer). Signature-slice files are pointers only — do not duplicate these IDs.
 
 Gameplay / production code was **not** modified this run. Do not implement from this file unless a human or the Report Action Orchestrator picks an ID.
 
-`origin/main` has not moved since the 09-21…10-25 audits. New IDs are new *reads* of the same bytes (Bomber card/kit/AP vs control panel; dungeon recap Depth defaults; hard_3 HUD omits peak AP).
+`origin/main` has not moved since the 09-21…10-25 audits. New IDs are new *reads* of the same bytes.
 
 **Do not twin** EBMA Bomber AI DoT/kamikaze (`EBMA-2026-09-01-006` — AI `summonExecutor` path). This run is the **player-facing** Bomber: card + spellbook kit + 1 AP chip vs a control panel that greys Inferno forever and never offers explode. Do not twin flat `hard_3` ≤ 8 auto-stamp (09-26-001). Do not twin turn-limit Failed chip (10-25-003). Do not twin recap dummy `"Battle Challenge"` (09-25-002). Do not twin Rest/Sanctuary hub (09-29-002). Do not twin leader crown tooltip (09-28-001 — InitiativeStrip panel line 660 is the same lie). Do not twin summon upgrade 10× (09-22-002). Do not twin Haste unread on summon budget (10-25-002). Do not twin HP pots vs 1:3 (09-23-002). Do not twin sheet SR / FAIL / AP-MP cadence / SP inbound (09-26-003 / 09-27-001 / 09-27-003 / 10-24-001). Do not twin `easy_1` healing-spells copy (10-24-002) or Pacifist feat overlap (PXA-009). Do not twin unused rush `combinedMechanic` (PXA-003). Do not twin sibling 004–006 Mirror/Mark/Strike.
 
@@ -85,4 +85,72 @@ AUTONOMY: ORCHESTRATOR_MAY_DRAFT the progress line + a component/test that hard_
 DEPENDENCIES: PXA-2026-09-26-001 (flat ≤ 8 — this ID is HUD visibility of the peak; does not close 001). PXA-2026-10-25-003 (turn-limit Failed — orthogonal). PXA-2026-09-22-003 / #364 (click-steal — do not hide HUD). PXA-2026-10-24-002 (`easy_1` heal copy — orthogonal; healUsed is also unprinted but not this ID). Does not close 09-26-001 / 10-25-003.  
 REGRESSION_RISK: LOW if only a progress line is added. Do not change `recordChallengeApSpend` or persist.  
 VALIDATION_REQUIRED: Accept hard_3, dump 6 AP: panel shows Peak AP 6/8 (or design equivalent) and On track. Dump 9 AP: Failed copy + peak ≥ 9. Turn-limit challenges still show Turns (10-25-003). Striker line unchanged. HUD still visible after first action. `pnpm typecheck`.  
+STATUS: NEW
+
+---
+
+ACTION_ID: PXA-2026-10-26-004  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Mirror self-cast never reaches activateMirror — the gifted one-shot reflect is a 4-AP no-op on its only legal tile  
+CATEGORY: spells  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Card: “Reflects the next incoming spell back at the attacker” (`src/frontend/src/data/spellData.ts` 198–214: `isMirror: true`, `targetType: "self"`, `range: 0n`, `effectType: "defense"`, `apCost: 4n`). Targeting only allows the caster tile (`targeting.ts` 503–508 `targetType === "self"`). `resolvePlayerCast` arms Mirror **only inside** the damage-loop guard `if (targetEnemy || spell.hitsMultiple)` (`spellEngine.ts` 882–926): `activateMirror()` sits at 918–925. On the legal self tile there is no hostile `targetEnemy` (`spellEngine.ts` 737–747 uses `isActiveHostile`) and Mirror is not `hitsMultiple`, so the branch is skipped and the function falls through to bare `return "cast"` (`spellEngine.ts` 1027–1028) — AP is deducted (`WorldExploration.tsx` 17158–17165) with no `activateMirror` call. `effectType: "defense"` also misses the self-buff hoist (`isShieldSpell` requires `effectType === "buff"`, `spellEngine.ts` 634–636). `playerMirror.ts` 1–7 documents an older tile-key bug that made Mirror a 4-AP no-op; `activatePlayerMirror` now writes `"player"` (`playerMirror.ts` 12–14) and enemy cast correctly consumes that key (`WorldExploration.tsx` 16496–16500) — but the player path never writes it. FAIL still rolls on Mirror (`spellEngine.ts` 641–651: `!isPhysical`). 10-23-003’s “Mirror = 100% next-hit” leg assumes this arming works; without it the gifted signature is dead while Field/Void/Reflect Shield still roll. Barrier/Summon were hoisted out of the same guard (`spellEngine.ts` 817–856); Mirror was not.  
+SYSTEMS_AFFECTED: spells (Mirror), visual feedback (no “Mirror active!” log on self-cast), enemies (boss kits that list `spell-mirror` still use other paths), admin (`isMirror` flag), challenges (no direct), terminology (Mirror vs Mirror Field)  
+RECOMMENDED_ACTION: REWORK — hoist `isMirror` beside Timestep / Barrier / Summon so self-cast calls `activateMirror` before any hostile gate. Keep Mirror as the one-shot commitment once armed (10-23-003 still merges the other three rates). Do not change Field 20% / Void 25% / Reflect Shield 30% here.  
+AUTONOMY: ORCHESTRATOR_MAY_DRAFT hoist + unit test: `resolvePlayerCast(spell-mirror, playerTile)` calls `activateMirror` once and returns `"cast"`; enemy single-target then `consumePlayerMirror` reflects. HUMAN_DESIGN_REQUIRED only if Mirror should require an enemy click (then reprint `targetType` / card).  
+DEPENDENCIES: PXA-2026-10-23-003 (four rates — this ID is dead arming; do not close 003 until Mirror actually arms). PXA-2026-08-31 signature KEEP (Mirror must stay unique). Does not twin Field flavor announce (09-01-002). PXA-2026-10-26-005 (Mark empty-floor fallthrough — same `"cast"` hole, different verb).  
+REGRESSION_RISK: LOW if only hoisting activation (fights get a real 4-AP defense). MEDIUM if FAIL exemption is added without card copy. Do not restack enemy consume or RAF / mapGen.  
+VALIDATION_REQUIRED: Select Mirror, click self: battle log “Mirror active!…”, `mirrorUnitsRef` has `"player"`. Next enemy single-target spell reflects and clears the token. Empty / enemy tiles are not required. Field/Void/Reflect Shield rates unchanged. `pnpm typecheck`.  
+STATUS: NEW
+
+---
+
+ACTION_ID: PXA-2026-10-26-005  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Mark card says “target tile” but targetType is enemy, placeMark only runs with a hostile on the click, and empty highlighted floors spend AP with no mark  
+CATEGORY: spells  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Deferred from 2026-10-25 (“Mark still writes a tile … while `targetType` is enemy”) — verified on `0f5363f`. Card: “Mark target tile — next spell on that tile deals x2 damage” (`spellData.ts` 161–177: `isMark: true`, `targetType: "enemy"`, `range: 4n`). `placeMark` writes a **tile key** (`WorldExploration.tsx` 9403–9405). ×2 + consume use the **cast click** `gridPos` (`WX` 3331–3334, 3390–3393). Resolve only enters the Mark branch when `targetEnemy || hitsMultiple` (`spellEngine.ts` 882, 928–936) — empty floor never calls `placeMark` and still `return "cast"` (1027–1028) after AP spend. Preview for `targetType: "enemy"` accepts any in-range non-barrier floor (`targeting.ts` 669–687). A placed mark is **invisible** (no `drawBarrierTower`; `markedTilesRef` is write + damage-read only). ×2 keys off the follow-up **click cell**, so a walking pawn leaves the bomb; Sacrifice uses `dealDamage` (`spellEngine.ts` 749–761) and never consults the mark; `hitsMultiple` passes the same click into every hit (list shape stays 10-25-001). Sacrifice on empty still `loseSelfHp` (`spellEngine.ts` 749–763) — same empty-enemy-type family. 10-25 deferred this as weaker than `hitsMultiple`; it is now a full signature identity fracture. Not a twin of 10-26-004 (Mirror self-cast behind the same guard).  
+SYSTEMS_AFFECTED: spells (Mark, empty-floor Swap / Sacrifice), targeting, visual feedback (no mark paint vs Barrier towers), challenges (Sacrifice self-HP on empty still records via `loseSelfHp` at `WX` 9374–9387)  
+RECOMMENDED_ACTION: REWORK to one Mark rule. Recommend: (a) `targetType: "ground"` + hoist `isMark` like Barrier so empty tiles place marks **and paint the cell**; **or** (b) reprint as “Mark an enemy’s cell” and `abort` empty execute. Strand rule must be on the card if marks stay tile-keyed after the unit moves. Fix Sacrifice to `abort` without `targetEnemy`. Do not change ×2 math once a mark is live. Do not change Chain Lightning’s list here (10-25-001).  
+AUTONOMY: ORCHESTRATOR_MAY_DRAFT hoist Mark + empty-tile place **or** empty-tile abort, plus unit tests: Mark on empty either places or aborts (never silent AP); Mark on enemy then Strike on that tile ×2 and consumes; Sacrifice without hostile does not call `loseSelfHp`. HUMAN_DESIGN_REQUIRED to pick tile-trap vs enemy-tag identity.  
+DEPENDENCIES: PXA-2026-10-25-001 (AoE/click geometry — orthogonal). PXA-2026-10-22-002 (Barrier ground hoist / paint). PXA-2026-10-26-004 (Mirror behind the same hostile gate — hoist sibling, do not merge verbs). Does not twin Barrier duration.  
+REGRESSION_RISK: MEDIUM if Mark becomes true ground (players pre-place traps). LOW if only empty execute aborts. HIGH if ×2 applies to every bounce from a marked click without card copy. No mapGen / RAF.  
+VALIDATION_REQUIRED: Mark selected: empty in-range floor either gains a **visible** mark **or** rejects with no AP loss. Mark on pawn, Strike same tile: ×2 once, mark gone. Mark on pawn, pawn walks away, Strike new tile: no ×2; Strike old empty tile: matches chosen rule. Sacrifice empty adjacent: no HP loss. Barrier still paints. `pnpm typecheck`.  
+STATUS: NEW
+
+---
+
+ACTION_ID: PXA-2026-10-26-006  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Strike silently skips FAIL while the card only teaches RES vs SP  
+CATEGORY: spells  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Prior KEEP: “Physical Strike skipping FAIL is KEEP **if** FAIL remains the only miss **and** the card says so.” Card today: “A direct physical attack. Only RES applies (not SP).” (`spellData.ts` 9–25: `isPhysical: true`). No FAIL / fizzle / accuracy sentence. Engine: FAIL roll is `if (!isPhysical)` (`spellEngine.ts` 641–651) — Strike never fizzles. Sheet still shows FAIL% (`WX` ~3646 / 18560). 09-27-003 is the Strike/log **SP-as-inbound** lie; this ID is the **unnamed miss exemption**. Windstorm 30% still rolls on Strike after the FAIL skip (`spellEngine.ts` 909–914; CD side-effect stays 10-21-002) — Strike is not “never misses,” only “never FAIL.”  
+SYSTEMS_AFFECTED: spells (Strike), visual feedback (FAIL% sheet vs Strike reliability), terminology (FAIL vs Windstorm), challenges (Striker path uses Strike)  
+RECOMMENDED_ACTION: SIMPLIFY — reprint Strike as “Cannot FAIL (Windstorm can still blow it off course)” **or** remove the `!isPhysical` exemption so FAIL is universal. Do not change RES/SP mitigation copy here (09-27-003). Do not change Windstorm rates (09-22-001 / 10-21-002).  
+AUTONOMY: ORCHESTRATOR_MAY_DRAFT card string + spellbook subtitle. HUMAN_DESIGN_REQUIRED to delete the exemption instead of naming it.  
+DEPENDENCIES: PXA-2026-09-22-001 (FAIL×Windstorm stack). PXA-2026-09-27-003 (SP/SR card/log — orthogonal). PXA-2026-10-21-002 (Windstorm miss → Inferno CD). Does not close those.  
+REGRESSION_RISK: LOW for copy-only. HIGH if FAIL suddenly applies to Strike (melee reliability drops ~20%).  
+VALIDATION_REQUIRED: Spellbook Strike names FAIL skip **or** a FAIL roll can fizzle Strike at L1. Windstorm can still miss Strike. RES-only / no-SP line unchanged in meaning. `pnpm typecheck`.  
+STATUS: NEW
+
+---
+
+ACTION_ID: PXA-2026-10-26-007  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Wisp does not heal allies — kit heals cost 3–4 AP on a 2 AP body, control cannot target the champion, resolveSpellCast spends Blood Mend on a CHC buff that never heals  
+CATEGORY: spells  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: 10-26-001 carved Wisp out (“Wolf / Archer / Sentinel / Wisp kits are spendable”). Re-read: they are not, and the card is still a healer lie. Gifted card: “Summons a Wisp that heals allies.” (`spellData.ts` 663–689: `summonAI: "healer"`, `summonUnitDef.ap: 2`, kit `["starter-heal", "spell-rallying-cry"]`). Blood Mend is 3 AP (`spellData.ts` 84–101); Rallying Cry is 4 AP (416–435). Control panel greys a slot when `currentAp < Number(apCost)` (`WX` 18993–18996; `SummonControlPanel.tsx` 343). At spawn `currentAp = maxAp = 2` (`getSummonBaseStats` / `summonSpawn.ts` 147–184). **Both kit buttons are permanently grey** — same affordance hole as Bomber 001, different verb (heal vs explode) and 001 explicitly excluded this unit. If AP were raised, the kit still could not restore the champion: both spells are `targetType: "self"`; `resolveSummonControlClickTarget` self = caster tile only (`summonControlCast.ts` 146–148); a locked test refuses any other Blood Mend cell (`summonControlCast.test.ts` 353–386). Ally targeting matches only `e.isSummon === true` (`targeting.ts` 527–544); the player is not in `combatantsRef` (`WX` 14259–14261). Kit resolve uses `resolveSpellCast` (`WX` 9849–9872), which applies `buffStat` **before** `healAmount` (`spellEngine.ts` 507–558), so Blood Mend would stamp `modifier: 0.15` CHC (×0.15, `statusEffects.ts` 26–62) on the Wisp and never grant 12 HP. Summon `computeDamage` hard-codes `isCrit: false`. `ctx.heal` no-ops unless `isPlayerHealTargetId` (`WX` 9186; `challengeCompletion.ts` 239–241; test `"wisp-1"` is false). Unused `runHealer` / `decideSummonHealer` would heal an owner and is unreachable from control mode (`summonIntegration.ts` 4; `WX` 14236–14238). 10-24-002 is `easy_1` copy vs `healUsed`. Player Blood Mend CHC on the **champion** path is EBMA. 10-26-001 is Bomber Inferno/explode. This ID is the healer summon answering none of the four questions.  
+SYSTEMS_AFFECTED: spells (Wisp, Blood Mend, Rallying Cry), summons (control panel + kit resolve), visual feedback (spellbook kit lists two heals on a 2 AP body), challenges (`easy_1` / Untouchable — a Wisp that cannot restore the champion cannot fail or save those contracts), admin-enabled content (`summonAI: "healer"` vs live control)  
+RECOMMENDED_ACTION: REWORK so the card, the kit, and a restore agree. Recommend: (a) one owner-heal kit spell whose AP the Wisp can pay and whose execute calls `ctx.heal("player", …)` without the `buffStat` early-return; (b) drop Rallying Cry / Blood Mend from the Wisp kit **or** split heal and CHC; (c) spellbook subtitle must match (a). Do not teach `runSummonAI` as a second healer language. Do not reprint `easy_1` here (10-24-002). Do not change Bomber here (10-26-001).  
+AUTONOMY: ORCHESTRATOR_MAY_DRAFT a unit test that a player-controlled Wisp restore increases **champion** HP (or the card/kit no longer say “heals allies” and the 2 AP body can spend its kit), plus moving heal before buff **or** dropping `buffStat` on the kit heal. HUMAN_DESIGN_REQUIRED to pick owner-heal vs self-heal vs ally-summon-heal.  
+DEPENDENCIES: PXA-2026-10-26-001 (Bomber AP/kit — same control-panel family, different identity; do not close 001 by greying Wisp too). PXA-2026-10-24-002 (`easy_1` heal copy — orthogonal). EBMA Blood Mend / Rally CHC on the **player** path. PXA-2026-08-31 KEEP of the five-pack (healer is blocked until this ID). Does not close 001 / 10-24-002.  
+REGRESSION_RISK: HIGH if Wisp suddenly heals the champion for 12 every Wisp turn (`easy_1` / Untouchable become Wisp-gated). MEDIUM if only the card reprints “cannot act.” LOW if kit is replaced with a 2-AP owner-heal the panel already aims. Do not restack RAF / mapGen.  
+VALIDATION_REQUIRED: Spellbook Wisp: AP chip and kit row describe a spend the panel can make. Summon Wisp, open the control panel: either a kit button is live **and** using it restores champion HP (or clearly the Wisp), or the card no longer says “heals allies.” Blood Mend on the champion tile is legal **or** not advertised. `easy_1` still uses `healUsed` (10-24-002). Bomber still 10-26-001. `pnpm typecheck`.  
 STATUS: NEW
