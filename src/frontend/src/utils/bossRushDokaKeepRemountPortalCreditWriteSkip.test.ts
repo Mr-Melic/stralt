@@ -3,22 +3,22 @@ import { describe, it } from "node:test";
 import { clampSaveBattleStatsWrite } from "./absoluteStatsClamp.ts";
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import { PORTAL_TRANSITION_XP } from "./applyRewardsResult.ts";
-import type { DeathPenaltyStorage } from "./deathPenalty.ts";
 import {
-  clearFeatDokaKeepRemountPortalCredit,
-  committedProgressAfterPortalWithFeatDokaKeep,
-  dokaForFeatDokaKeepRemountPortalCredit,
-  dokaFromFeatDokaKeepPortalCreditWalletRecord,
-  featDokaKeepRemountPortalCreditKey,
-  hasFeatDokaKeepRemountPortalCredit,
-  leftoverShopWriteAfterPortalWithFeatDokaKeep,
-  noteFeatDokaKeepRemountPortalCredit,
-  persistIncrementalRewardsThroughFeatDokaKeepRemount,
-  persistPortalThroughFeatDokaKeepRemount,
-  readFeatDokaKeepRemountPortalCredit,
-  sessionDokaAfterFeatDokaKeepRemountPortalCredit,
-  shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka,
-} from "./featDokaKeepRemountPortalCreditWriteSkip.ts";
+  bossRushDokaKeepRemountPortalCreditKey,
+  clearBossRushDokaKeepRemountPortalCredit,
+  committedProgressAfterPortalWithBossRushDokaKeep,
+  dokaForBossRushDokaKeepRemountPortalCredit,
+  dokaFromBossRushDokaKeepPortalCreditWalletRecord,
+  hasBossRushDokaKeepRemountPortalCredit,
+  leftoverShopWriteAfterPortalWithBossRushDokaKeep,
+  noteBossRushDokaKeepRemountPortalCredit,
+  persistIncrementalRewardsThroughBossRushDokaKeepRemount,
+  persistPortalThroughBossRushDokaKeepRemount,
+  readBossRushDokaKeepRemountPortalCredit,
+  sessionDokaAfterBossRushDokaKeepRemountPortalCredit,
+  shouldRefuseBossRushDokaKeepRemountPortalCreditStaleDoka,
+} from "./bossRushDokaKeepRemountPortalCreditWriteSkip.ts";
+import type { DeathPenaltyStorage } from "./deathPenalty.ts";
 import {
   ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
   applySpendToCommitted,
@@ -32,11 +32,11 @@ import { committedDokaAfterGameKeyRedeem } from "./shopPurchase.ts";
 
 const PLAY_ENTRY_XP = 100;
 const PLAY_ENTRY_DOKA = 200;
-const FEAT_GRANT = 500;
-const FEAT_DOKA = PLAY_ENTRY_DOKA + FEAT_GRANT;
+const BOSS_RUSH_GRANT = 500;
+const BOSS_RUSH_DOKA = PLAY_ENTRY_DOKA + BOSS_RUSH_GRANT;
 const PORTAL_XP = PLAY_ENTRY_XP + PORTAL_TRANSITION_XP;
 const SHOP_SPEND = 50;
-const SECOND_FEAT_GRANT = 100;
+const FEAT_GRANT = 100;
 const GAMEKEY_GRANT = 1000;
 const LEVEL = 4;
 
@@ -73,107 +73,110 @@ function canisterAfterAbsoluteWrite(
   return { doka: wrote.doka, xp: wrote.xp };
 }
 
-describe("featDokaKeepRemountPortalCreditKey", () => {
-  it("reads the same #812 slot key, not XP-throw or other Doka keys", () => {
+describe("bossRushDokaKeepRemountPortalCreditKey", () => {
+  it("reads the same #864 slot key, not XP-throw or other Doka keys", () => {
     assert.equal(
-      featDokaKeepRemountPortalCreditKey(1),
-      "pbv_feat_doka_keep_remount_slot1",
+      bossRushDokaKeepRemountPortalCreditKey(1),
+      "pbv_boss_rush_doka_keep_remount_slot1",
     );
     assert.equal(
-      featDokaKeepRemountPortalCreditKey(3),
-      "pbv_feat_doka_keep_remount_slot3",
+      bossRushDokaKeepRemountPortalCreditKey(3),
+      "pbv_boss_rush_doka_keep_remount_slot3",
     );
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_victory_doka_keep_remount_slot1",
     );
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_oneshot_doka_keep_remount_slot1",
     );
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_gamekey_doka_keep_remount_slot1",
     );
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
+      "pbv_feat_doka_keep_remount_slot1",
+    );
+    assert.notEqual(
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_victory_xp_keep_remount_slot1",
     );
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_portal_xp_keep_remount_slot1",
     );
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_xp_credit_keep_remount_slot1",
     );
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
-      "pbv_boss_rush_doka_keep_remount_slot1",
-    );
-    assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_spend_keep_remount_slot1",
     );
   });
 });
 
-describe("note / read / clear FeatDokaKeepRemountPortalCredit", () => {
-  it("round-trips the #812 { preDoka } shape", () => {
+describe("note / read / clear BossRushDokaKeepRemountPortalCredit", () => {
+  it("round-trips the #864 { preDoka } shape", () => {
     const storage = memStorage();
-    assert.equal(hasFeatDokaKeepRemountPortalCredit(storage, 1), false);
-    noteFeatDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
-    assert.deepEqual(readFeatDokaKeepRemountPortalCredit(storage, 1), {
+    assert.equal(hasBossRushDokaKeepRemountPortalCredit(storage, 1), false);
+    noteBossRushDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
+    assert.deepEqual(readBossRushDokaKeepRemountPortalCredit(storage, 1), {
       preDoka: PLAY_ENTRY_DOKA,
     });
-    assert.equal(hasFeatDokaKeepRemountPortalCredit(storage, 1), true);
-    clearFeatDokaKeepRemountPortalCredit(storage, 1);
-    assert.equal(readFeatDokaKeepRemountPortalCredit(storage, 1), null);
+    assert.equal(hasBossRushDokaKeepRemountPortalCredit(storage, 1), true);
+    clearBossRushDokaKeepRemountPortalCredit(storage, 1);
+    assert.equal(readBossRushDokaKeepRemountPortalCredit(storage, 1), null);
   });
 
   it("isolates character slots", () => {
     const storage = memStorage();
-    noteFeatDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
-    noteFeatDokaKeepRemountPortalCredit(storage, 2, 90);
-    assert.deepEqual(readFeatDokaKeepRemountPortalCredit(storage, 1), {
+    noteBossRushDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
+    noteBossRushDokaKeepRemountPortalCredit(storage, 2, 90);
+    assert.deepEqual(readBossRushDokaKeepRemountPortalCredit(storage, 1), {
       preDoka: PLAY_ENTRY_DOKA,
     });
-    assert.deepEqual(readFeatDokaKeepRemountPortalCredit(storage, 2), {
+    assert.deepEqual(readBossRushDokaKeepRemountPortalCredit(storage, 2), {
       preDoka: 90,
     });
-    clearFeatDokaKeepRemountPortalCredit(storage, 1);
-    assert.equal(readFeatDokaKeepRemountPortalCredit(storage, 1), null);
-    assert.equal(hasFeatDokaKeepRemountPortalCredit(storage, 2), true);
+    clearBossRushDokaKeepRemountPortalCredit(storage, 1);
+    assert.equal(readBossRushDokaKeepRemountPortalCredit(storage, 1), null);
+    assert.equal(hasBossRushDokaKeepRemountPortalCredit(storage, 2), true);
   });
 });
 
-describe("dokaFromFeatDokaKeepPortalCreditWalletRecord", () => {
+describe("dokaFromBossRushDokaKeepPortalCreditWalletRecord", () => {
   it("reads number, bigint, and { ok } wallet", () => {
     assert.equal(
-      dokaFromFeatDokaKeepPortalCreditWalletRecord(FEAT_DOKA),
-      FEAT_DOKA,
+      dokaFromBossRushDokaKeepPortalCreditWalletRecord(BOSS_RUSH_DOKA),
+      BOSS_RUSH_DOKA,
     );
     assert.equal(
-      dokaFromFeatDokaKeepPortalCreditWalletRecord(BigInt(FEAT_DOKA)),
-      FEAT_DOKA,
+      dokaFromBossRushDokaKeepPortalCreditWalletRecord(BigInt(BOSS_RUSH_DOKA)),
+      BOSS_RUSH_DOKA,
     );
     assert.equal(
-      dokaFromFeatDokaKeepPortalCreditWalletRecord({ ok: FEAT_DOKA }),
-      FEAT_DOKA,
+      dokaFromBossRushDokaKeepPortalCreditWalletRecord({ ok: BOSS_RUSH_DOKA }),
+      BOSS_RUSH_DOKA,
     );
   });
 
   it("returns null for missing / non-numeric payloads", () => {
-    assert.equal(dokaFromFeatDokaKeepPortalCreditWalletRecord(null), null);
-    assert.equal(dokaFromFeatDokaKeepPortalCreditWalletRecord("nope"), null);
-    assert.equal(dokaFromFeatDokaKeepPortalCreditWalletRecord({}), null);
+    assert.equal(dokaFromBossRushDokaKeepPortalCreditWalletRecord(null), null);
+    assert.equal(
+      dokaFromBossRushDokaKeepPortalCreditWalletRecord("nope"),
+      null,
+    );
+    assert.equal(dokaFromBossRushDokaKeepPortalCreditWalletRecord({}), null);
   });
 });
 
-describe("shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka", () => {
+describe("shouldRefuseBossRushDokaKeepRemountPortalCreditStaleDoka", () => {
   it("fail-closes when live still equals stamped preDoka", () => {
     assert.equal(
-      shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka({
+      shouldRefuseBossRushDokaKeepRemountPortalCreditStaleDoka({
         keep: true,
         liveDoka: PLAY_ENTRY_DOKA,
         stampedPreDoka: PLAY_ENTRY_DOKA,
@@ -184,7 +187,7 @@ describe("shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka", () => {
 
   it("fail-closes when live sits below stamped preDoka", () => {
     assert.equal(
-      shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka({
+      shouldRefuseBossRushDokaKeepRemountPortalCreditStaleDoka({
         keep: true,
         liveDoka: 0,
         stampedPreDoka: PLAY_ENTRY_DOKA,
@@ -195,7 +198,7 @@ describe("shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka", () => {
 
   it("fail-closes when keep is set and live Doka is missing", () => {
     assert.equal(
-      shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka({
+      shouldRefuseBossRushDokaKeepRemountPortalCreditStaleDoka({
         keep: true,
         liveDoka: null,
         stampedPreDoka: PLAY_ENTRY_DOKA,
@@ -204,11 +207,11 @@ describe("shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka", () => {
     );
   });
 
-  it("does not refuse a risen feat wallet 700", () => {
+  it("does not refuse a risen Boss Rush wallet 700", () => {
     assert.equal(
-      shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka({
+      shouldRefuseBossRushDokaKeepRemountPortalCreditStaleDoka({
         keep: true,
-        liveDoka: FEAT_DOKA,
+        liveDoka: BOSS_RUSH_DOKA,
         stampedPreDoka: PLAY_ENTRY_DOKA,
       }),
       false,
@@ -217,7 +220,7 @@ describe("shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka", () => {
 
   it("does not refuse when keep is unset", () => {
     assert.equal(
-      shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka({
+      shouldRefuseBossRushDokaKeepRemountPortalCreditStaleDoka({
         keep: false,
         liveDoka: PLAY_ENTRY_DOKA,
         stampedPreDoka: PLAY_ENTRY_DOKA,
@@ -227,19 +230,19 @@ describe("shouldRefuseFeatDokaKeepRemountPortalCreditStaleDoka", () => {
   });
 });
 
-describe("successful feat Doka keep then remount portal without unpaid death", () => {
+describe("successful Boss Rush Doka keep then remount portal without unpaid death", () => {
   it("leftover remount portal commit keeps Play-entry Doka 200 while canister is 700", () => {
     // Chronology:
     // 1. World hydrated. Lock doka=200 / XP 100. Canister 200/100.
-    // 2. claimAchievementReward adds 500 then throws (700/100). Catch toasts.
-    //    GameFlow Play-entry stays 200. #812 stamps preDoka=200.
-    //    #774 / #800 / #811 / #767 / #813 do not stamp this wallet.
+    // 2. Room 0 applyRewards adds 500 then throws (700/100). Catch logs.
+    //    GameFlow Play-entry stays 200. #864 stamps preDoka=200.
+    //    #774 / #800 / #811 / #812 / #767 / #813 do not stamp this wallet.
     // 3. Actor reconnect remounts. Lock Doka 200 / XP 100.
     // 4. Portal persistIncrementalRewards(0, 10) #ok newXp=110, newDoka=700.
     //    Production commits XP/level only. Lock Doka stays 200.
-    const afterPortal = committedProgressAfterPortalWithFeatDokaKeep({
+    const afterPortal = committedProgressAfterPortalWithBossRushDokaKeep({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: false,
       stampedPreDoka: PLAY_ENTRY_DOKA,
       portalNewXp: PORTAL_XP,
@@ -255,9 +258,9 @@ describe("successful feat Doka keep then remount portal without unpaid death", (
   });
 
   it("leftover shop after that portal writes Doka 150 over canister 700", () => {
-    const leftoverShop = leftoverShopWriteAfterPortalWithFeatDokaKeep({
+    const leftoverShop = leftoverShopWriteAfterPortalWithBossRushDokaKeep({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: false,
       stampedPreDoka: PLAY_ENTRY_DOKA,
       portalNewXp: PORTAL_XP,
@@ -267,18 +270,18 @@ describe("successful feat Doka keep then remount portal without unpaid death", (
     assert.deepEqual(leftoverShop, { xp: PORTAL_XP, doka: 150 });
     assert.deepEqual(
       canisterAfterAbsoluteWrite(
-        { doka: FEAT_DOKA, xp: PORTAL_XP },
+        { doka: BOSS_RUSH_DOKA, xp: PORTAL_XP },
         leftoverShop ?? { xp: 0, doka: 0 },
       ),
       { doka: 150, xp: PORTAL_XP },
-      "incoming-below-stored wipes feat Doka (portal leftover XP is kept)",
+      "incoming-below-stored wipes Boss Rush Doka (portal leftover XP is kept)",
     );
   });
 
   it("gated remount portal honour replica 700 so leftover shop cannot wipe it", () => {
-    const gatedShop = leftoverShopWriteAfterPortalWithFeatDokaKeep({
+    const gatedShop = leftoverShopWriteAfterPortalWithBossRushDokaKeep({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: true,
       stampedPreDoka: PLAY_ENTRY_DOKA,
       portalNewXp: PORTAL_XP,
@@ -288,7 +291,7 @@ describe("successful feat Doka keep then remount portal without unpaid death", (
     assert.deepEqual(gatedShop, { xp: PORTAL_XP, doka: 650 });
     assert.deepEqual(
       canisterAfterAbsoluteWrite(
-        { doka: FEAT_DOKA, xp: PORTAL_XP },
+        { doka: BOSS_RUSH_DOKA, xp: PORTAL_XP },
         gatedShop ?? { xp: 0, doka: 0 },
       ),
       { doka: 650, xp: PORTAL_XP },
@@ -296,24 +299,24 @@ describe("successful feat Doka keep then remount portal without unpaid death", (
   });
 
   it("portal +10 XP still lands from applyRewards newXp", () => {
-    const gated = committedProgressAfterPortalWithFeatDokaKeep({
+    const gated = committedProgressAfterPortalWithBossRushDokaKeep({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: true,
       stampedPreDoka: PLAY_ENTRY_DOKA,
       portalNewXp: PORTAL_XP,
       portalNewLevel: LEVEL,
     });
     assert.equal(gated?.xp, PLAY_ENTRY_XP + PORTAL_TRANSITION_XP);
-    assert.equal(gated?.doka, FEAT_DOKA);
+    assert.equal(gated?.doka, BOSS_RUSH_DOKA);
   });
 });
 
-describe("sessionDokaAfterFeatDokaKeepRemountPortalCredit", () => {
+describe("sessionDokaAfterBossRushDokaKeepRemountPortalCredit", () => {
   it("ungated remount wallet stays Play-entry 200 so leftover shop writes a lie", () => {
-    const session = sessionDokaAfterFeatDokaKeepRemountPortalCredit({
+    const session = sessionDokaAfterBossRushDokaKeepRemountPortalCredit({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: false,
       stampedPreDoka: PLAY_ENTRY_DOKA,
     });
@@ -321,21 +324,21 @@ describe("sessionDokaAfterFeatDokaKeepRemountPortalCredit", () => {
   });
 
   it("honour replica 700 so leftover shop matches the canister", () => {
-    const session = sessionDokaAfterFeatDokaKeepRemountPortalCredit({
+    const session = sessionDokaAfterBossRushDokaKeepRemountPortalCredit({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: true,
       stampedPreDoka: PLAY_ENTRY_DOKA,
     });
-    assert.equal(session, FEAT_DOKA);
+    assert.equal(session, BOSS_RUSH_DOKA);
   });
 });
 
 describe("pickup-only remount portal still uses Play-entry Doka", () => {
   it("does not honour without a keep stamp", () => {
-    const shop = leftoverShopWriteAfterPortalWithFeatDokaKeep({
+    const shop = leftoverShopWriteAfterPortalWithBossRushDokaKeep({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: false,
       stampedPreDoka: PLAY_ENTRY_DOKA,
       portalNewXp: PORTAL_XP,
@@ -350,22 +353,22 @@ describe("pickup-only remount portal still uses Play-entry Doka", () => {
 });
 
 describe("unique vs heal/shop, death, rename, feat/GameKey, sibling portals", () => {
-  it("heal/shop #812 would honour 700 before persistAbsoluteProgress", () => {
+  it("heal/shop #864 would honour 700 before persistAbsoluteProgress", () => {
     assert.equal(
-      dokaForFeatDokaKeepRemountPortalCredit({
+      dokaForBossRushDokaKeepRemountPortalCredit({
         remountDoka: PLAY_ENTRY_DOKA,
-        liveDoka: FEAT_DOKA,
+        liveDoka: BOSS_RUSH_DOKA,
         keep: true,
         stampedPreDoka: PLAY_ENTRY_DOKA,
       }),
-      FEAT_DOKA,
+      BOSS_RUSH_DOKA,
     );
   });
 
-  it("rename #992 would debit replica 700, not Play-entry 200", () => {
-    const honoured = dokaForFeatDokaKeepRemountPortalCredit({
+  it("rename #1020 would debit replica 700, not Play-entry 200", () => {
+    const honoured = dokaForBossRushDokaKeepRemountPortalCredit({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: true,
       stampedPreDoka: PLAY_ENTRY_DOKA,
     });
@@ -377,27 +380,27 @@ describe("unique vs heal/shop, death, rename, feat/GameKey, sibling portals", ()
     assert.equal(RENAME_DOKA_COST, 100);
   });
 
-  it("second feat #1032 would add grant onto replica 700, not Play-entry 200", () => {
-    const honoured = dokaForFeatDokaKeepRemountPortalCredit({
+  it("feat #1025 would add grant onto replica 700, not Play-entry 200", () => {
+    const honoured = dokaForBossRushDokaKeepRemountPortalCredit({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: true,
       stampedPreDoka: PLAY_ENTRY_DOKA,
     });
     assert.equal(
-      committedDokaAfterAchievementCredit(honoured ?? 0, SECOND_FEAT_GRANT),
+      committedDokaAfterAchievementCredit(honoured ?? 0, FEAT_GRANT),
       800,
     );
     assert.equal(
-      committedDokaAfterAchievementCredit(PLAY_ENTRY_DOKA, SECOND_FEAT_GRANT),
+      committedDokaAfterAchievementCredit(PLAY_ENTRY_DOKA, FEAT_GRANT),
       300,
     );
   });
 
-  it("GameKey #1032 would add 1000 onto replica 700, not Play-entry 200", () => {
-    const honoured = dokaForFeatDokaKeepRemountPortalCredit({
+  it("GameKey #1025 would add 1000 onto replica 700, not Play-entry 200", () => {
+    const honoured = dokaForBossRushDokaKeepRemountPortalCredit({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: true,
       stampedPreDoka: PLAY_ENTRY_DOKA,
     });
@@ -412,9 +415,9 @@ describe("unique vs heal/shop, death, rename, feat/GameKey, sibling portals", ()
   });
 
   it("leftover-XP one-shot #1092 is reverse order leftover XP — this is Doka wipe", () => {
-    const portalShop = leftoverShopWriteAfterPortalWithFeatDokaKeep({
+    const portalShop = leftoverShopWriteAfterPortalWithBossRushDokaKeep({
       remountDoka: PLAY_ENTRY_DOKA,
-      liveDoka: FEAT_DOKA,
+      liveDoka: BOSS_RUSH_DOKA,
       keep: false,
       stampedPreDoka: PLAY_ENTRY_DOKA,
       portalNewXp: PORTAL_XP,
@@ -427,37 +430,44 @@ describe("unique vs heal/shop, death, rename, feat/GameKey, sibling portals", ()
 
   it("victory Doka keep × portal is #1129 (different stamp key)", () => {
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_victory_doka_keep_remount_slot1",
     );
   });
 
   it("one-shot Doka keep × portal is #1145 (different stamp key)", () => {
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_oneshot_doka_keep_remount_slot1",
     );
   });
 
   it("GameKey Doka keep × portal is #1147 (different stamp key)", () => {
     assert.notEqual(
-      featDokaKeepRemountPortalCreditKey(1),
+      bossRushDokaKeepRemountPortalCreditKey(1),
       "pbv_gamekey_doka_keep_remount_slot1",
+    );
+  });
+
+  it("feat Doka keep × portal is #1149 (different stamp key)", () => {
+    assert.notEqual(
+      bossRushDokaKeepRemountPortalCreditKey(1),
+      "pbv_feat_doka_keep_remount_slot1",
     );
   });
 });
 
-describe("persistPortalThroughFeatDokaKeepRemount", () => {
+describe("persistPortalThroughBossRushDokaKeepRemount", () => {
   it("adopts replica 700 then portal commits leftover+10 XP", async () => {
     const storage = memStorage();
-    noteFeatDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
+    noteBossRushDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
     const persist = remountLock();
     let applied = false;
-    const ok = await persistPortalThroughFeatDokaKeepRemount({
+    const ok = await persistPortalThroughBossRushDokaKeepRemount({
       persist,
       storage,
       slot: 1,
-      readWallet: async () => FEAT_DOKA,
+      readWallet: async () => BOSS_RUSH_DOKA,
       applyAndCommit: async () => {
         applied = true;
         persist.commit({ xp: PORTAL_XP, level: LEVEL });
@@ -466,10 +476,10 @@ describe("persistPortalThroughFeatDokaKeepRemount", () => {
     });
     assert.equal(ok, true);
     assert.equal(applied, true);
-    assert.equal(persist.snapshot().doka, FEAT_DOKA);
+    assert.equal(persist.snapshot().doka, BOSS_RUSH_DOKA);
     assert.equal(persist.snapshot().xp, PORTAL_XP);
     assert.equal(
-      hasFeatDokaKeepRemountPortalCredit(storage, 1),
+      hasBossRushDokaKeepRemountPortalCredit(storage, 1),
       false,
       "clear the stamp after honour so leftover shop cannot reconstruct 200",
     );
@@ -477,12 +487,12 @@ describe("persistPortalThroughFeatDokaKeepRemount", () => {
 
   it("throws and does not apply when live Doka is still Play-entry", async () => {
     const storage = memStorage();
-    noteFeatDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
+    noteBossRushDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
     const persist = remountLock();
     let applied = false;
     await assert.rejects(
       () =>
-        persistPortalThroughFeatDokaKeepRemount({
+        persistPortalThroughBossRushDokaKeepRemount({
           persist,
           storage,
           slot: 1,
@@ -501,7 +511,7 @@ describe("persistPortalThroughFeatDokaKeepRemount", () => {
     assert.equal(persist.snapshot().doka, PLAY_ENTRY_DOKA);
     assert.equal(persist.snapshot().xp, PLAY_ENTRY_XP);
     assert.equal(
-      hasFeatDokaKeepRemountPortalCredit(storage, 1),
+      hasBossRushDokaKeepRemountPortalCredit(storage, 1),
       true,
       "fail-close keeps the stamp",
     );
@@ -509,11 +519,11 @@ describe("persistPortalThroughFeatDokaKeepRemount", () => {
 
   it("throws when live wallet is missing", async () => {
     const storage = memStorage();
-    noteFeatDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
+    noteBossRushDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
     const persist = remountLock();
     await assert.rejects(
       () =>
-        persistPortalThroughFeatDokaKeepRemount({
+        persistPortalThroughBossRushDokaKeepRemount({
           persist,
           storage,
           slot: 1,
@@ -524,16 +534,16 @@ describe("persistPortalThroughFeatDokaKeepRemount", () => {
         err instanceof Error &&
         err.message === ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
     );
-    assert.equal(hasFeatDokaKeepRemountPortalCredit(storage, 1), true);
+    assert.equal(hasBossRushDokaKeepRemountPortalCredit(storage, 1), true);
   });
 
   it("throws when the wallet read throws", async () => {
     const storage = memStorage();
-    noteFeatDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
+    noteBossRushDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
     const persist = remountLock();
     await assert.rejects(
       () =>
-        persistPortalThroughFeatDokaKeepRemount({
+        persistPortalThroughBossRushDokaKeepRemount({
           persist,
           storage,
           slot: 1,
@@ -546,17 +556,17 @@ describe("persistPortalThroughFeatDokaKeepRemount", () => {
         err instanceof Error &&
         err.message === ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
     );
-    assert.equal(hasFeatDokaKeepRemountPortalCredit(storage, 1), true);
+    assert.equal(hasBossRushDokaKeepRemountPortalCredit(storage, 1), true);
   });
 
   it("passthrough without a stamp still runs portal persist", async () => {
     const persist = remountLock();
     let applied = false;
-    await persistPortalThroughFeatDokaKeepRemount({
+    await persistPortalThroughBossRushDokaKeepRemount({
       persist,
       storage: memStorage(),
       slot: 1,
-      readWallet: async () => FEAT_DOKA,
+      readWallet: async () => BOSS_RUSH_DOKA,
       applyAndCommit: async () => {
         applied = true;
         persist.commit({ xp: PLAY_ENTRY_XP + PORTAL_TRANSITION_XP });
@@ -569,14 +579,14 @@ describe("persistPortalThroughFeatDokaKeepRemount", () => {
   });
 });
 
-describe("persistIncrementalRewardsThroughFeatDokaKeepRemount", () => {
+describe("persistIncrementalRewardsThroughBossRushDokaKeepRemount", () => {
   it("honours replica 700 then portal applyRewards commits leftover+10 XP, dokaDelta 0", async () => {
     const storage = memStorage();
-    noteFeatDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
+    noteBossRushDokaKeepRemountPortalCredit(storage, 1, PLAY_ENTRY_DOKA);
     const persist = remountLock();
-    const canister = { doka: FEAT_DOKA, xp: PLAY_ENTRY_XP };
-    const persisted = await persistIncrementalRewardsThroughFeatDokaKeepRemount(
-      {
+    const canister = { doka: BOSS_RUSH_DOKA, xp: PLAY_ENTRY_XP };
+    const persisted =
+      await persistIncrementalRewardsThroughBossRushDokaKeepRemount({
         actor: {
           applyRewards: async (
             _slot: bigint,
@@ -599,16 +609,19 @@ describe("persistIncrementalRewardsThroughFeatDokaKeepRemount", () => {
         slot: 1,
         dokaDelta: 0,
         xpDelta: PORTAL_TRANSITION_XP,
-        readWallet: async () => FEAT_DOKA,
-      },
-    );
-    assert.equal(persisted.newDoka, FEAT_DOKA);
+        readWallet: async () => BOSS_RUSH_DOKA,
+      });
+    assert.equal(persisted.newDoka, BOSS_RUSH_DOKA);
     assert.equal(persisted.newXp, PORTAL_XP);
-    assert.equal(canister.doka, FEAT_DOKA, "portal dokaDelta 0 must not mint");
+    assert.equal(
+      canister.doka,
+      BOSS_RUSH_DOKA,
+      "portal dokaDelta 0 must not mint",
+    );
     assert.equal(canister.xp, PORTAL_XP);
-    assert.equal(persist.snapshot().doka, FEAT_DOKA);
+    assert.equal(persist.snapshot().doka, BOSS_RUSH_DOKA);
     assert.equal(persist.snapshot().xp, PORTAL_XP);
-    assert.equal(hasFeatDokaKeepRemountPortalCredit(storage, 1), false);
+    assert.equal(hasBossRushDokaKeepRemountPortalCredit(storage, 1), false);
 
     const leftoverShop = {
       xp: persist.snapshot().xp,
@@ -625,8 +638,8 @@ describe("persistIncrementalRewardsThroughFeatDokaKeepRemount", () => {
 
   it("ungated portal (no stamp) commits XP while lock Doka stays Play-entry", async () => {
     const persist = remountLock();
-    const canister = { doka: FEAT_DOKA, xp: PLAY_ENTRY_XP };
-    await persistIncrementalRewardsThroughFeatDokaKeepRemount({
+    const canister = { doka: BOSS_RUSH_DOKA, xp: PLAY_ENTRY_XP };
+    await persistIncrementalRewardsThroughBossRushDokaKeepRemount({
       actor: {
         applyRewards: async (
           _slot: bigint,
@@ -649,11 +662,11 @@ describe("persistIncrementalRewardsThroughFeatDokaKeepRemount", () => {
       slot: 1,
       dokaDelta: 0,
       xpDelta: PORTAL_TRANSITION_XP,
-      readWallet: async () => FEAT_DOKA,
+      readWallet: async () => BOSS_RUSH_DOKA,
     });
     assert.equal(persist.snapshot().doka, PLAY_ENTRY_DOKA);
     assert.equal(persist.snapshot().xp, PORTAL_XP);
-    assert.equal(canister.doka, FEAT_DOKA);
+    assert.equal(canister.doka, BOSS_RUSH_DOKA);
     const leftoverShop = {
       xp: persist.snapshot().xp,
       doka: applySpendToCommitted(persist.snapshot().doka, SHOP_SPEND),
@@ -668,12 +681,12 @@ describe("persistIncrementalRewardsThroughFeatDokaKeepRemount", () => {
   });
 });
 
-describe("dokaForFeatDokaKeepRemountPortalCredit", () => {
+describe("dokaForBossRushDokaKeepRemountPortalCredit", () => {
   it("returns remount wallet when keep is unset", () => {
     assert.equal(
-      dokaForFeatDokaKeepRemountPortalCredit({
+      dokaForBossRushDokaKeepRemountPortalCredit({
         remountDoka: PLAY_ENTRY_DOKA,
-        liveDoka: FEAT_DOKA,
+        liveDoka: BOSS_RUSH_DOKA,
         keep: false,
         stampedPreDoka: PLAY_ENTRY_DOKA,
       }),
@@ -683,7 +696,7 @@ describe("dokaForFeatDokaKeepRemountPortalCredit", () => {
 
   it("returns null when keep is set and live is stale", () => {
     assert.equal(
-      dokaForFeatDokaKeepRemountPortalCredit({
+      dokaForBossRushDokaKeepRemountPortalCredit({
         remountDoka: PLAY_ENTRY_DOKA,
         liveDoka: PLAY_ENTRY_DOKA,
         keep: true,
@@ -695,7 +708,7 @@ describe("dokaForFeatDokaKeepRemountPortalCredit", () => {
 
   it("leftover shop helper fail-closes on stale live", () => {
     assert.equal(
-      leftoverShopWriteAfterPortalWithFeatDokaKeep({
+      leftoverShopWriteAfterPortalWithBossRushDokaKeep({
         remountDoka: PLAY_ENTRY_DOKA,
         liveDoka: PLAY_ENTRY_DOKA,
         keep: true,
