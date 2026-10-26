@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 import {
   spellCooldownOverlayLabel,
   spellCooldownTitleSuffix,
-} from "./spellCooldownCopy.ts";
+} from "./spellSlotCooldownCopy.ts";
 
 const panelSource = readFileSync(
   fileURLToPath(new URL("../components/BattleUIPanel.tsx", import.meta.url)),
   "utf8",
 );
 
-describe("spellCooldownCopy", () => {
+describe("spellSlotCooldownCopy", () => {
   it("says turns remaining instead of CD: Nt", () => {
     assert.equal(spellCooldownTitleSuffix(2), " | 2 turns remaining");
     assert.equal(spellCooldownTitleSuffix(1), " | 1 turn remaining");
@@ -30,6 +30,6 @@ describe("spellCooldownCopy", () => {
   it("is not wired — BattleUIPanel still prints CD: Nt and a bare overlay", () => {
     assert.match(panelSource, /CD: \$\{cdTurns\}t/);
     assert.match(panelSource, /\{cdTurns\}/);
-    assert.equal(panelSource.includes("spellCooldownCopy"), false);
+    assert.equal(panelSource.includes("spellSlotCooldownCopy"), false);
   });
 });

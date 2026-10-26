@@ -34,7 +34,7 @@ TITLE: Spell hover uses CD: Nt and overlay is a bare integer
 CATEGORY: spell-state
 PRIORITY: P2
 CONFIDENCE: HIGH
-FILES_OR_SYSTEMS: src/frontend/src/utils/spellCooldownCopy.ts; BattleUIPanel.tsx (origin/main, untouched)
+FILES_OR_SYSTEMS: src/frontend/src/utils/spellSlotCooldownCopy.ts; BattleUIPanel.tsx (origin/main, untouched). Do not restack #696 spellCooldownCopy.ts (Inferno gifted-card clause).
 CURRENT_BEHAVIOUR: Title suffix is ` | CD: ${cdTurns}t`. Overlay is `{cdTurns}` with no unit.
 DESIRED_BEHAVIOUR: spellCooldownTitleSuffix — “ | 2 turns remaining”. Overlay may stay compact for 2+; 1-turn names the unit.
 EVIDENCE: BattleUIPanel.tsx ~637, ~730.
@@ -42,7 +42,7 @@ RECOMMENDED_ACTION: Wire after BattleUIPanel is free. Do not change cooldown mat
 AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: LOW
-VALIDATION_REQUIRED: spellCooldownCopy.test.ts; hover says turns; no CD: Nt.
+VALIDATION_REQUIRED: spellSlotCooldownCopy.test.ts; hover says turns; no CD: Nt. Do not overwrite #696 Inferno card helpers.
 STATUS: IMPLEMENTED_THIS_RUN
 ```
 
@@ -315,6 +315,9 @@ STATUS: NEW
 - `UX-RECAP-FEAT-PRECREDIT`
 - `UX-INIT-SUMMON-PHASE`
 - `UX-FEAT-TOAST-CLUSTER`
+
+### #696
+- Inferno gifted-card “3-turn cooldown” (`spellCooldownCopy.ts`). Slot hover `CD: Nt` is this run’s `UX-SPELL-CD-TURNS` (`spellSlotCooldownCopy.ts`) — do not overwrite.
 
 ### #738
 - `UX-ZONE-TIER-LOCK`

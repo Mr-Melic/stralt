@@ -1,10 +1,11 @@
 /**
- * Spell-slot cooldown chrome. Display only — not wired into
+ * Battle-bar remaining-cooldown chrome. Display only — not wired into
  * BattleUIPanel.tsx (forbidden while older combat / a11y PRs own that file).
  *
  * UX-SPELL-CD-TURNS: hover uses `CD: {n}t` and the overlay is a bare integer.
- * Distinct from UX-TURN-TIMER-WHY (the 30s / Time Warp 15s clock) and
- * UX-SPELL-AP-DISABLED-REASON (AP-short slots stay clickable).
+ * Distinct from #696 spellCooldownCopy.ts (Inferno gifted-card “3-turn
+ * cooldown” clause), UX-TURN-TIMER-WHY (the 30s / Time Warp 15s clock),
+ * and UX-SPELL-AP-DISABLED-REASON (AP-short slots stay clickable).
  */
 
 function floorTurns(turns: number): number {
