@@ -24,6 +24,9 @@ import {
   KIT_STRIKE_DAMAGE,
   LIFE_DRAIN_HEAL,
   MAX_ENEMIES_SIM,
+  MIRROR_FIELD_CANCELS_HIT,
+  MIRROR_FIELD_REFLECT_CHANCE,
+  MIRROR_FIELD_SKIPS_PLAYER_TAKES_DAMAGE,
   OVERWORLD_SPAWN_SETS_SIDE,
   PLAYER_CREATE_EVASION,
   PLAYER_CREATE_INIT,
@@ -38,7 +41,11 @@ import {
   SUMMON_GUARDIAN_HP_SCALE,
   SUMMON_HUNTER_HP_SCALE,
   SUMMON_SPAWN_SETS_ATK,
+  TIDE_SHADE_MP_DEBUFF,
+  TIME_WARP_TIMER_SECONDS,
   TITANS_VIGOR_DMG_MAX,
+  VOID_MIRROR_HIT_STILL_LANDS,
+  VOID_MIRROR_REFLECT_FRACTION,
   WORLD_BOSS_LEVEL_OFFSET,
   WORLD_BOSS_SPAWN_RES_CLAMP,
   arcaneSurgeApCost,
@@ -78,6 +85,7 @@ import {
   firstLevelFormulaFrostCastsAtLeast,
   firstLevelFormulaMpAtLeast,
   firstLevelFormulaSummonCastsAtLeast,
+  firstLevelFrostDumpSelfDamageExceeds,
   firstLevelFrostDumpWithMultExceeds,
   firstLevelHazardMaxBelowHpPercent,
   firstLevelIronCursedResCanHit100,
@@ -86,6 +94,7 @@ import {
   firstLevelSpellFailHitsZero,
   firstLevelSpellRangeHitsCap,
   firstLevelStackedArcaneFrostCastsAtLeast,
+  firstLevelTideShadeDebuffBelowMpPercent,
   firstLevelTimestepFrostCastsAtLeast,
   firstPlayerLevelBossRushCrushOneShots,
   firstPlayerLevelBossRushHpExceedsCatalog,
@@ -105,7 +114,11 @@ import {
   firstStressLevelFullyUnderDungeonCap,
   formulaAp,
   formulaMp,
+  frostCastsPerTimerSecond,
   frostCastsWithTimestepRefill,
+  frostDumpMirrorFieldExpectedSelfDamage,
+  frostDumpVoidMirrorSelfDamage,
+  frostPreCritDmgBm,
   glassChip1,
   groundDokaMean,
   healthPotionDokaPerHp,
@@ -119,6 +132,7 @@ import {
   linearEnemyMaxHp,
   linearPlayerMaxHp,
   mendingMistRegenAtPlayerLevel,
+  mirrorFieldReflect,
   officialStackedXp,
   overlayEnemyAp,
   overlayEnemyAtk,
@@ -152,11 +166,14 @@ import {
   starterTimestepIsOncePerBattle,
   summonMeleeRaw,
   summonerChance,
+  tideShadeMpDebuffOverFormulaMp,
   titansGlassMaxChip1,
   titansMaxChip1,
   titansVigorHp,
   vampiricHeal,
   victoryHpFloor,
+  voidMirrorFamilyChance,
+  voidMirrorReflect,
   worldBossChip1FrostTurns,
   worldBossEnemyLevel,
   xpNeedExactAsNumber,
@@ -669,5 +686,56 @@ assert.equal(vampiricHeal(titansGlassMaxChip1()), 1);
 assert.equal(vampiricHeal(7), 1);
 assert.equal(report.vampiricThrowawayAttacker.healFromChip1, 0);
 assert.equal(report.vampiricThrowawayAttacker.healFromTitansGlassMaxChip1, 1);
+
+assert.equal(frostPreCritDmgBm(), 20);
+assert.equal(playerFrostRaw(0), 21);
+assert.equal(MIRROR_FIELD_REFLECT_CHANCE, 0.2);
+assert.equal(MIRROR_FIELD_CANCELS_HIT, true);
+assert.equal(MIRROR_FIELD_SKIPS_PLAYER_TAKES_DAMAGE, true);
+assert.equal(mirrorFieldReflect(frostPreCritDmgBm()), 20);
+assert.equal(mirrorFieldReflect(frostPreCritDmgBm({ bloodMoon: true })), 25);
+assert.equal(
+  mirrorFieldReflect(frostPreCritDmgBm({ bloodMoon: true, fury: true })),
+  31,
+);
+assert.equal(mirrorFieldReflect(frostPreCritDmgBm({ crit: true })), 40);
+assert.equal(
+  frostDumpMirrorFieldExpectedSelfDamage(formulaAp(325)),
+  0.2 * 20 * 7,
+);
+assert.equal(
+  frostDumpMirrorFieldExpectedSelfDamage(formulaAp(100_000)),
+  0.2 * 20 * 1336,
+);
+assert.equal(report.mirrorFieldPreResReflect.reflectAt0, 20);
+assert.equal(report.mirrorFieldPreResReflect.outgoingChip1AfterRes100, 1);
+assert.equal(report.mirrorFieldPreResReflect.sacrificeUsesThisPath, false);
+
+assert.equal(VOID_MIRROR_REFLECT_FRACTION, 0.25);
+assert.equal(VOID_MIRROR_HIT_STILL_LANDS, true);
+assert.equal(voidMirrorReflect(frostPreCritDmgBm()), 5);
+assert.equal(voidMirrorReflect(1), 0);
+assert.equal(voidMirrorFamilyChance(), 0.3 / 7);
+assert.equal(frostDumpVoidMirrorSelfDamage(formulaAp(1)), 10);
+assert.equal(frostDumpVoidMirrorSelfDamage(formulaAp(325)), 35);
+assert.equal(frostDumpVoidMirrorSelfDamage(formulaAp(100_000)), 6680);
+assert.equal(firstLevelFrostDumpSelfDamageExceeds(5, 30), 325);
+assert.equal(TIDE_SHADE_MP_DEBUFF, -1);
+assert.equal(tideShadeMpDebuffOverFormulaMp(1), 0.25);
+assert.equal(firstLevelTideShadeDebuffBelowMpPercent(0.05), 425);
+assert.equal(report.voidMirrorFamilyReflect.reflectAt0, 5);
+assert.equal(report.voidMirrorFamilyReflect.dumpAt325, 35);
+assert.equal(
+  report.voidMirrorFamilyReflect.familyStringSurvivesBattleStartOverwrite,
+  true,
+);
+
+assert.equal(TIME_WARP_TIMER_SECONDS, 15);
+assert.equal(frostCastsPerTimerSecond(formulaAp(325), 15), 7 / 15);
+assert.equal(frostCastsPerTimerSecond(formulaAp(7300), 15), 100 / 15);
+assert.equal(frostCastsPerTimerSecond(formulaAp(100_000), 15), 1336 / 15);
+assert.equal(report.timeWarpVsFrostDump.warpSeconds, 15);
+assert.equal(report.timeWarpVsFrostDump.castsAt100000, 1336);
+assert.equal(report.timeWarpVsFrostDump.firstLevel100FormulaCasts, 7300);
 
 console.log("longHorizonSim.test: ok");

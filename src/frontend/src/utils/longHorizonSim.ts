@@ -16,6 +16,8 @@ import {
   MAP_MODIFIER_GLASS_REALM_DAMAGE_MULTIPLIER,
   MAP_MODIFIER_IRON_CURSE_RES_BONUS,
   MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT,
+  MAP_MODIFIER_NORMAL_TIMER,
+  MAP_MODIFIER_TIME_WARP_TIMER,
   MAP_MODIFIER_TITANS_VIGOR_HP_BONUS,
   MAP_MODIFIER_TITANS_VIGOR_MAX_MULTIPLIER,
   MAP_MODIFIER_TITANS_VIGOR_MIN_MULTIPLIER,
@@ -1468,6 +1470,139 @@ export function vampiricHeal(damage: number): number {
   );
 }
 
+/**
+ * Mirror Field WX `mirrorFieldReflect` (`WorldExploration.tsx`): 20% chance
+ * to write `hp -= preCritDmgBM` on the player and return true so
+ * `spellEngine` records the cast and **does not hit the enemy**.
+ * `preCritDmgBM` is catalog Frost after upgrade/crit/Blood Moon/Fury and
+ * **before** SP / enemy SR×RES (`spellEngine.ts`). Skips
+ * `playerTakesDamage` (create RES 10 and Shield Charm never apply).
+ * Registry `mirror_field` is a no-op placeholder (`mapModifiers.ts`); the
+ * live path is the WX id-check. Sacrifice uses `dealDamage` and skips this.
+ */
+export const MIRROR_FIELD_REFLECT_CHANCE = 0.2;
+export const MIRROR_FIELD_REFLECT_FRACTION = 1;
+export const MIRROR_FIELD_CANCELS_HIT = true;
+export const MIRROR_FIELD_SKIPS_PLAYER_TAKES_DAMAGE = true;
+export const BLOOD_MOON_DAMAGE_MULT = 1.25;
+export const FURY_POTION_DAMAGE_MULT = 1.25;
+export const SACRIFICE_USES_MIRROR_FIELD_REFLECT = false;
+
+/**
+ * Void Mirror family reflect (`castHelpers.ts`): `floor(preCritDmgBM * 0.25)`
+ * writes player HP directly. The enemy hit still lands (post-SR×RES).
+ * Family tag is set at spawn (`maybeApplyEnemyFamilyVariant`) and is **not**
+ * cleared when battle-start overwrites HP/RES/SP (10-22-001). P(family) =
+ * `FAMILY_VARIANT_CHANCE / FAMILY_TYPES.length`. Shield Charm is not
+ * consulted. Sacrifice skips this path.
+ */
+export const VOID_MIRROR_REFLECT_FRACTION = 0.25;
+export const VOID_MIRROR_HIT_STILL_LANDS = true;
+export const VOID_MIRROR_SKIPS_PLAYER_TAKES_DAMAGE = true;
+export const VOID_MIRROR_SKIPS_SHIELD_CHARM = true;
+export const FAMILY_STRING_SURVIVES_BATTLE_START_OVERWRITE = true;
+export const FAMILY_TYPE_COUNT = FAMILY_TYPES.length;
+export const VOID_MIRROR_FAMILY_ID = "void_mirror";
+
+/** Tide Shade melee on-hit (`WorldExploration.tsx`): −1 MP for 2 turns. */
+export const TIDE_SHADE_MP_DEBUFF = -1;
+export const TIDE_SHADE_MP_DURATION = 2;
+/** Ember Knight melee on-hit: 3 dmg/turn for 3 turns (DoT via playerTakesDamage). */
+export const EMBER_KNIGHT_BURN_TICK = 3;
+export const EMBER_KNIGHT_BURN_DURATION = 3;
+
+export const TIME_WARP_TIMER_SECONDS = MAP_MODIFIER_TIME_WARP_TIMER;
+export const NORMAL_TURN_TIMER_SECONDS = MAP_MODIFIER_NORMAL_TIMER;
+
+/**
+ * Live `spellEngine` Blood Moon / Fury / crit fold **before**
+ * `calculatePlayerDamage`. Upgrade 0 catalog Frost is 20, not the SP-buffed
+ * 21 that `playerFrostRaw` reports.
+ */
+export function frostPreCritDmgBm(opts?: {
+  crit?: boolean;
+  bloodMoon?: boolean;
+  fury?: boolean;
+  upgrade?: number;
+}): number {
+  const upgrade = Math.max(0, Math.floor(Number(opts?.upgrade) || 0));
+  const raw = calcScaledDamage(KIT_FROST_DAMAGE, 1, upgrade);
+  const preCrit = opts?.crit ? raw * 2 : raw;
+  const blood = opts?.bloodMoon ? BLOOD_MOON_DAMAGE_MULT : 1;
+  const fury = opts?.fury ? FURY_POTION_DAMAGE_MULT : 1;
+  return Math.round(preCrit * blood * fury);
+}
+
+export function voidMirrorReflect(preCritDmgBm: number): number {
+  return Math.floor(
+    Math.max(0, Number(preCritDmgBm) || 0) * VOID_MIRROR_REFLECT_FRACTION,
+  );
+}
+
+export function mirrorFieldReflect(preCritDmgBm: number): number {
+  return Math.max(0, Math.floor(Number(preCritDmgBm) || 0));
+}
+
+export function voidMirrorFamilyChance(): number {
+  return FAMILY_VARIANT_CHANCE / Math.max(1, FAMILY_TYPES.length);
+}
+
+export function frostDumpVoidMirrorSelfDamage(
+  ap: number,
+  preCritDmgBm = frostPreCritDmgBm(),
+): number {
+  return voidMirrorReflect(preCritDmgBm) * playerFrostCastsPerTurn(ap);
+}
+
+export function frostDumpMirrorFieldExpectedSelfDamage(
+  ap: number,
+  preCritDmgBm = frostPreCritDmgBm(),
+): number {
+  return (
+    MIRROR_FIELD_REFLECT_CHANCE *
+    mirrorFieldReflect(preCritDmgBm) *
+    playerFrostCastsPerTurn(ap)
+  );
+}
+
+export function firstLevelFrostDumpSelfDamageExceeds(
+  damagePerCast: number,
+  need: number,
+  limit = 200_000,
+): number | null {
+  const per = Math.max(0, Number(damagePerCast) || 0);
+  const want = Math.max(0, Number(need) || 0);
+  for (let level = 1; level <= limit; level++) {
+    if (per * playerFrostCastsPerTurn(formulaAp(level)) > want) return level;
+  }
+  return null;
+}
+
+export function tideShadeMpDebuffOverFormulaMp(level: number): number {
+  const mp = formulaMp(level);
+  if (mp <= 0) return Number.POSITIVE_INFINITY;
+  return Math.abs(TIDE_SHADE_MP_DEBUFF) / mp;
+}
+
+export function firstLevelTideShadeDebuffBelowMpPercent(
+  percent: number,
+  limit = 200_000,
+): number | null {
+  const pct = Math.max(0, percent);
+  for (let level = 1; level <= limit; level++) {
+    if (tideShadeMpDebuffOverFormulaMp(level) < pct) return level;
+  }
+  return null;
+}
+
+export function frostCastsPerTimerSecond(
+  ap: number,
+  timerSeconds: number,
+): number {
+  const secs = Math.max(1, Number(timerSeconds) || 1);
+  return playerFrostCastsPerTurn(ap) / secs;
+}
+
 /** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
 export const HAZARD_LAVA_MIN = 8;
 export const HAZARD_LAVA_MAX = 15;
@@ -1848,7 +1983,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-10-25T00:20:00.000Z",
+    generatedAt: "2026-10-26T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -2714,6 +2849,83 @@ export function runLongHorizonSim() {
       healFromGlassChip1: vampiricHeal(glassChip1()),
       healFromTitansGlassMaxChip1: vampiricHeal(titansGlassMaxChip1()),
       firstNonZeroHealOnChip1Mult: 7,
+    },
+    mirrorFieldPreResReflect: {
+      chance: MIRROR_FIELD_REFLECT_CHANCE,
+      fraction: MIRROR_FIELD_REFLECT_FRACTION,
+      cancelsHit: MIRROR_FIELD_CANCELS_HIT,
+      skipsPlayerTakesDamage: MIRROR_FIELD_SKIPS_PLAYER_TAKES_DAMAGE,
+      sacrificeUsesThisPath: SACRIFICE_USES_MIRROR_FIELD_REFLECT,
+      frostPreCritAt0: frostPreCritDmgBm(),
+      frostPlayerRawIncludesSp: playerFrostRaw(0),
+      reflectAt0: mirrorFieldReflect(frostPreCritDmgBm()),
+      reflectBloodMoon: mirrorFieldReflect(
+        frostPreCritDmgBm({ bloodMoon: true }),
+      ),
+      reflectBloodMoonFury: mirrorFieldReflect(
+        frostPreCritDmgBm({ bloodMoon: true, fury: true }),
+      ),
+      reflectCrit: mirrorFieldReflect(frostPreCritDmgBm({ crit: true })),
+      outgoingChip1AfterRes100: 1,
+      expectedSelfAt325: frostDumpMirrorFieldExpectedSelfDamage(formulaAp(325)),
+      expectedSelfAt100000: frostDumpMirrorFieldExpectedSelfDamage(
+        formulaAp(100_000),
+      ),
+      bloodMoonNoOpOnChip1: true,
+    },
+    voidMirrorFamilyReflect: {
+      familyId: VOID_MIRROR_FAMILY_ID,
+      fraction: VOID_MIRROR_REFLECT_FRACTION,
+      hitStillLands: VOID_MIRROR_HIT_STILL_LANDS,
+      skipsPlayerTakesDamage: VOID_MIRROR_SKIPS_PLAYER_TAKES_DAMAGE,
+      skipsShieldCharm: VOID_MIRROR_SKIPS_SHIELD_CHARM,
+      familyStringSurvivesBattleStartOverwrite:
+        FAMILY_STRING_SURVIVES_BATTLE_START_OVERWRITE,
+      familyVariantChance: FAMILY_VARIANT_CHANCE_SIM,
+      familyTypeCount: FAMILY_TYPE_COUNT,
+      pVoidMirror: voidMirrorFamilyChance(),
+      reflectAt0: voidMirrorReflect(frostPreCritDmgBm()),
+      reflectBloodMoonFury: voidMirrorReflect(
+        frostPreCritDmgBm({ bloodMoon: true, fury: true }),
+      ),
+      dumpAt1: frostDumpVoidMirrorSelfDamage(formulaAp(1)),
+      dumpAt325: frostDumpVoidMirrorSelfDamage(formulaAp(325)),
+      dumpAt100000: frostDumpVoidMirrorSelfDamage(formulaAp(100_000)),
+      firstLevelDumpExceedsUnder30: firstLevelFrostDumpSelfDamageExceeds(
+        voidMirrorReflect(frostPreCritDmgBm()),
+        30,
+      ),
+      tideShadeMpDebuff: TIDE_SHADE_MP_DEBUFF,
+      tideShadeMpDuration: TIDE_SHADE_MP_DURATION,
+      tideDebuffOverMpAt1: tideShadeMpDebuffOverFormulaMp(1),
+      tideDebuffOverMpAt100000: tideShadeMpDebuffOverFormulaMp(100_000),
+      firstLevelTideDebuffBelow5PctMp:
+        firstLevelTideShadeDebuffBelowMpPercent(0.05),
+      emberBurnTotal: EMBER_KNIGHT_BURN_TICK * EMBER_KNIGHT_BURN_DURATION,
+    },
+    timeWarpVsFrostDump: {
+      warpSeconds: TIME_WARP_TIMER_SECONDS,
+      normalSeconds: NORMAL_TURN_TIMER_SECONDS,
+      castsAt325: playerFrostCastsPerTurn(formulaAp(325)),
+      castsAt7300: playerFrostCastsPerTurn(formulaAp(7300)),
+      castsAt100000: playerFrostCastsPerTurn(formulaAp(100_000)),
+      stackedCastsAt100000: playerFrostCastsPerTurnWithStackedArcane(
+        formulaAp(100_000),
+      ),
+      castsPerWarpSecondAt325: frostCastsPerTimerSecond(
+        formulaAp(325),
+        TIME_WARP_TIMER_SECONDS,
+      ),
+      castsPerWarpSecondAt7300: frostCastsPerTimerSecond(
+        formulaAp(7300),
+        TIME_WARP_TIMER_SECONDS,
+      ),
+      castsPerWarpSecondAt100000: frostCastsPerTimerSecond(
+        formulaAp(100_000),
+        TIME_WARP_TIMER_SECONDS,
+      ),
+      firstLevel100FormulaCasts: firstLevelFormulaFrostCastsAtLeast(100),
+      timerRunsOnPlayerAndEnemyTurns: true,
     },
   };
 }
