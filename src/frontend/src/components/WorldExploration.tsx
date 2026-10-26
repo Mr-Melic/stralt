@@ -72,6 +72,7 @@ import type { SpriteRect } from "../debug/clickTrace";
 // post-pass and at click time to arm lastClickOverlayRef).
 import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
 import { drawBarrierTower } from "../engine/barrierRender";
+import { drawBattlePortalCube } from "../engine/battlePortalCube";
 import {
   PLAGUE_ZONE_TICK,
   VOID_RIFT_TICK,
@@ -7763,147 +7764,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               th2,
             } = _portalSnapshot;
             if (inBattle) {
-              // Draw a teal cube block (distinct from grey stone walls) with pixel texture
-              const bh = 28;
-              ctx.save();
-
-              // Helper: draw pixel dots across a face polygon using seeded random
-              const drawPortalPixels = (
-                seed: number,
-                baseColor: string,
-                xs: number[],
-                ys: number[],
-                count: number,
-              ) => {
-                const minX = Math.min(...xs);
-                const maxX = Math.max(...xs);
-                const minY = Math.min(...ys);
-                const maxY = Math.max(...ys);
-                let sv = Math.abs(seed) + 1;
-                const nextRng = () => {
-                  sv = (sv * 16807) % 2147483647;
-                  return (sv - 1) / 2147483646;
-                };
-                for (let i = 0; i < count; i++) {
-                  const px = minX + nextRng() * (maxX - minX);
-                  const py = minY + nextRng() * (maxY - minY);
-                  const sz = 1 + nextRng();
-                  const bright = nextRng() < 0.5 ? 1 : -1;
-                  const bParsed = Number.parseInt(baseColor.slice(1), 16);
-                  const r = Math.min(
-                    255,
-                    Math.max(0, ((bParsed >> 16) & 0xff) + bright * 30),
-                  );
-                  const g = Math.min(
-                    255,
-                    Math.max(0, ((bParsed >> 8) & 0xff) + bright * 25),
-                  );
-                  const b = Math.min(
-                    255,
-                    Math.max(0, (bParsed & 0xff) + bright * 20),
-                  );
-                  ctx.fillStyle = `rgba(${r},${g},${b},0.85)`;
-                  ctx.fillRect(px, py, sz, sz);
-                }
-              };
-
-              const portalSeed = p.x * 127 + p.y * 311;
-              const isDungeonPortal = p.color === "dungeon";
-              const ptop = isDungeonPortal ? "#8b0000" : "#00CED1";
-              const pright = isDungeonPortal ? "#660000" : "#008B8B";
-              const pleft = isDungeonPortal ? "#4a0000" : "#006666";
-              const pstroke = isDungeonPortal ? "#2a0000" : "#005a5c";
-              const pfront1 = isDungeonPortal ? "#550000" : "#007a7a";
-              const pfront2 = isDungeonPortal ? "#3a0000" : "#005c5c";
-
-              // Top face
-              ctx.beginPath();
-              ctx.moveTo(sp.x, sp.y - bh);
-              ctx.lineTo(sp.x + tw2 / 2, sp.y + th2 / 2 - bh);
-              ctx.lineTo(sp.x, sp.y + th2 - bh);
-              ctx.lineTo(sp.x - tw2 / 2, sp.y + th2 / 2 - bh);
-              ctx.closePath();
-              ctx.fillStyle = ptop;
-              ctx.fill();
-              ctx.strokeStyle = pstroke;
-              ctx.lineWidth = 0.5;
-              ctx.stroke();
-              drawPortalPixels(
-                portalSeed,
-                ptop,
-                [sp.x, sp.x + tw2 / 2, sp.x, sp.x - tw2 / 2],
-                [
-                  sp.y - bh,
-                  sp.y + th2 / 2 - bh,
-                  sp.y + th2 - bh,
-                  sp.y + th2 / 2 - bh,
-                ],
-                10,
+              // Teal/crimson cube. Paint lives in engine/battlePortalCube.ts.
+              // Do not fold into barrierRender or the overworld whirlpool.
+              drawBattlePortalCube(
+                ctx,
+                sp.x,
+                sp.y,
+                tw2,
+                th2,
+                p.x,
+                p.y,
+                p.color,
               );
-
-              // Right face
-              ctx.beginPath();
-              ctx.moveTo(sp.x + tw2 / 2, sp.y + th2 / 2);
-              ctx.lineTo(sp.x + tw2 / 2, sp.y + th2 / 2 - bh);
-              ctx.lineTo(sp.x, sp.y - bh);
-              ctx.lineTo(sp.x, sp.y);
-              ctx.closePath();
-              ctx.fillStyle = pright;
-              ctx.fill();
-              ctx.strokeStyle = isDungeonPortal ? "#200000" : "#004444";
-              ctx.lineWidth = 0.5;
-              ctx.stroke();
-              drawPortalPixels(
-                portalSeed + 1,
-                pright,
-                [sp.x + tw2 / 2, sp.x + tw2 / 2, sp.x, sp.x],
-                [sp.y + th2 / 2, sp.y + th2 / 2 - bh, sp.y - bh, sp.y],
-                9,
-              );
-
-              // Left face
-              ctx.beginPath();
-              ctx.moveTo(sp.x - tw2 / 2, sp.y + th2 / 2);
-              ctx.lineTo(sp.x - tw2 / 2, sp.y + th2 / 2 - bh);
-              ctx.lineTo(sp.x, sp.y - bh);
-              ctx.lineTo(sp.x, sp.y);
-              ctx.closePath();
-              ctx.fillStyle = pleft;
-              ctx.fill();
-              ctx.strokeStyle = isDungeonPortal ? "#150000" : "#003333";
-              ctx.lineWidth = 0.5;
-              ctx.stroke();
-              drawPortalPixels(
-                portalSeed + 2,
-                pleft,
-                [sp.x - tw2 / 2, sp.x - tw2 / 2, sp.x, sp.x],
-                [sp.y + th2 / 2, sp.y + th2 / 2 - bh, sp.y - bh, sp.y],
-                9,
-              );
-
-              // Front faces (bottom cube)
-              ctx.beginPath();
-              ctx.moveTo(sp.x, sp.y);
-              ctx.lineTo(sp.x + tw2 / 2, sp.y + th2 / 2);
-              ctx.lineTo(sp.x, sp.y + th2);
-              ctx.closePath();
-              ctx.fillStyle = pfront1;
-              ctx.fill();
-              ctx.beginPath();
-              ctx.moveTo(sp.x - tw2 / 2, sp.y + th2 / 2);
-              ctx.lineTo(sp.x, sp.y);
-              ctx.lineTo(sp.x, sp.y + th2);
-              ctx.closePath();
-              ctx.fillStyle = pfront2;
-              ctx.fill();
-              // Dark seam
-              ctx.strokeStyle = "#000000";
-              ctx.lineWidth = 1.5;
-              ctx.beginPath();
-              ctx.moveTo(sp.x, sp.y);
-              ctx.lineTo(sp.x, sp.y + th2);
-              ctx.stroke();
-              ctx.restore();
             } else {
               drawPortalWhirlpool(
                 ctx,
