@@ -53,8 +53,14 @@ written, [#1163](https://github.com/Mr-Melic/stralt/pull/1163) enemy-boss,
 [#1172](https://github.com/Mr-Melic/stralt/pull/1172) WDD,
 [#1173](https://github.com/Mr-Melic/stralt/pull/1173) MIMA,
 [#1174](https://github.com/Mr-Melic/stralt/pull/1174) map,
-[#1175](https://github.com/Mr-Melic/stralt/pull/1175) PX, and
-[#1176](https://github.com/Mr-Melic/stralt/pull/1176) formations opened.
+[#1175](https://github.com/Mr-Melic/stralt/pull/1175) PX,
+[#1176](https://github.com/Mr-Melic/stralt/pull/1176) formations,
+[#1177](https://github.com/Mr-Melic/stralt/pull/1177) spell proposals,
+[#1178](https://github.com/Mr-Melic/stralt/pull/1178) UX,
+[#1179](https://github.com/Mr-Melic/stralt/pull/1179) emergent meta,
+[#1180](https://github.com/Mr-Melic/stralt/pull/1180) GTAD,
+[#1181](https://github.com/Mr-Melic/stralt/pull/1181) dead-code, and
+[#1182](https://github.com/Mr-Melic/stralt/pull/1182) combat opened.
 Later swarm expected.
 
 ---
@@ -237,14 +243,14 @@ not move. Additional **open** drafts that are **not** Health sources:
 | :--- | :--- | :--- |
 | #345 / #424 / #455 / #504 / #559 / #616 / #668 / #750 / #801 / #827 / #879 / #936 / #988 / #1048 / **#1118** | Prior TADD matrices, same SHA | **One** H1–H14 spec. Union docs; do not concatenate UI. |
 | #333 / #395 / #462 / #502 / #556 / #582 / #609 / #640 / #661 / #725 / #768 / #833 / #871 / #928 / #994 / #1053 / #1108 / **#1165** TBC | WAITING_FOR_TELEMETRY / balance analysis, 0 rows | Do not paint as zero battles. |
-| #352 / #422 / #450 / #527 / #583 / #641 / #682 / #722 / #806 / #816 / #884 / #931 / #981 / #1047 / **#1116** GTAD | Architecture + Phase 1 extras | AQA-012 seven counters only. |
+| #352 / #422 / #450 / #527 / #583 / #641 / #682 / #722 / #806 / #816 / #884 / #931 / #981 / #1047 / #1116 / **#1180** GTAD | Architecture + Phase 1 extras | AQA-012 seven counters only. |
 | #355 / #418 / #461 / #520 / #586 / #624 / #694 / #715 / #782 / #835 / #880 / #930 / #990 / #1051 / #1110 / **#1169** VAL | Visual library design | No custom-URL loader. No `CUSTOM_FALLBACK` series. |
 | #371 / #480 / #533 / #590 / #646 / #679 / #802 / #837 / #893 / #906 / #962 / #1017 / #1082 / **#1143** SDE | Observe→win design | No `observedSpellIds` / `ownedSpellIds` persist. |
 | Formations / elites / AI docs through #941 / #956 / #958 / #997 / #999 / #1005 / #1072 / #1073 / #1075 / #1134 / #1135 / #1138 / **#1176** | Design copies | No encounter / elite / archetype usage charts. |
 | #357 / #407 / #475 / #530 / #560 / #637 / #670 / #777 / #819 / #898 / #960 / #1016 / #1077 / **#1141** LHIPS | Synthetic progression | `telemetry.available` stays false. |
 | #398 / #473 / #515 / #570 / #630 / #677 / #729 / #791 / #815 / #892 / #940 / #1007 / #1078 / **#1140** SDA | Spell/discovery admin re-audit | Catalog UX, not a discovery store. |
 | **#1119–#1162** (rest of 10-26 after #1118) | Dead-code #1119 / diversity #1120 / encounters #1121 / perf #1122 / combat #1123 / MTD #1124 / a11y #1125 / persist tests #1126 / map #1127 / world admin #1128 / remount #1129 / admin drift #1130 / MIMA #1131 / spell proposals #1132 / GFCF #1133 / formations #1134 / AI #1135 / combat #1136 / UX #1137 / elites #1138 / boss sheets #1139 / SDA #1140 / LHIPS #1141 / combat #1142 / SDE #1143 / PX #1144 / later remount-combat-map-test-a11y through #1162 | Not collectors. Do not scrape tests, remount PRs, #961/#995/#1076/#1109 extracts, #1143 SDE, #1140 SDA, #1110 VAL, or #1116 GTAD as telemetry / custom-URL load. |
-| Same-hour 10-27 copies | Dated copies: **0** at ~00:03Z inspect; while writing, **#1163** enemy-boss / **#1164** tests / **#1165** TBC / **#1166** combat / **#1167** diversity / **#1168** combat / **#1169** VAL / **#1170** boss sheets / **#1171** persist tests / **#1172** WDD / **#1173** MIMA / **#1174** map / **#1175** PX / **#1176** formations. Later swarm expected. | Same fence. Do not scrape #1165 TBC zeros as zero battles. Do not scrape #1169/#1110 VAL or a newer GTAD / extract filename as a custom-URL loader. |
+| Same-hour 10-27 copies | Dated copies: **0** at ~00:03Z inspect; while writing, **#1163** enemy-boss / **#1164** tests / **#1165** TBC / **#1166** combat / **#1167** diversity / **#1168** combat / **#1169** VAL / **#1170** boss sheets / **#1171** persist tests / **#1172** WDD / **#1173** MIMA / **#1174** map / **#1175** PX / **#1176** formations / **#1177** spell proposals / **#1178** UX / **#1179** meta / **#1180** GTAD / **#1181** dead-code / **#1182** combat. Later swarm expected. | Same fence. Do not scrape #1165 TBC zeros as zero battles. Do not scrape #1169/#1110 VAL or #1180/#1116 GTAD / extract filenames as collectors. |
 
 ---
 
