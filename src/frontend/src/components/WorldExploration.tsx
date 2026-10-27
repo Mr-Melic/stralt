@@ -118,6 +118,11 @@ import {
   seededRng,
 } from "../engine/combatMath";
 import {
+  drawFloorHoverGlow,
+  drawSpellRangeOverlay,
+  drawWalkTileOverlay,
+} from "../engine/combatTileOverlay";
+import {
   type CombatantStoreCtx,
   addCombatant,
   dumpStateSync,
@@ -7614,69 +7619,38 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
 
           // ── D. Tile hover glow (animated pulse) ──────────────────────────
+          // Paint lives in engine/combatTileOverlay.ts. Do not fold into
+          // tilePaint / mapHazardPaint / battleWalkMp.
           if (isHovered && tileType === "floor") {
-            const pulseAlpha = 0.12 + Math.sin(now * 0.003) * 0.05;
-            const isSpellHover =
+            const isSpellHover = Boolean(
               inBattleRef.current &&
-              battleActionModeRef.current === "attack" &&
-              selectedSpellIdRef.current;
-            const isMpHover =
-              inBattleRef.current && battleActionModeRef.current === "walk";
-            const glowR = isSpellHover ? 100 : isMpHover ? 0 : 255;
-            const glowG = isSpellHover ? 150 : isMpHover ? 255 : 255;
-            const glowB = isSpellHover ? 255 : isMpHover ? 100 : 200;
-            ctx.save();
-            const glowGrad = ctx.createRadialGradient(
+                battleActionModeRef.current === "attack" &&
+                selectedSpellIdRef.current,
+            );
+            const isMpHover = Boolean(
+              inBattleRef.current && battleActionModeRef.current === "walk",
+            );
+            drawFloorHoverGlow(
+              ctx,
               screenPos.x,
-              screenPos.y + effectiveTileH / 2,
-              0,
-              screenPos.x,
-              screenPos.y + effectiveTileH / 2,
-              effectiveTileW / 2,
+              screenPos.y,
+              effectiveTileW,
+              effectiveTileH,
+              isSpellHover,
+              isMpHover,
+              now,
             );
-            glowGrad.addColorStop(
-              0,
-              `rgba(${glowR},${glowG},${glowB},${pulseAlpha})`,
-            );
-            glowGrad.addColorStop(1, "rgba(0,0,0,0)");
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(
-              screenPos.x + effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
-            );
-            ctx.lineTo(screenPos.x, screenPos.y + effectiveTileH);
-            ctx.lineTo(
-              screenPos.x - effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
-            );
-            ctx.closePath();
-            ctx.fillStyle = glowGrad;
-            ctx.fill();
-            ctx.restore();
           }
 
           // Green MP highlight
           if (mpTiles.has(`${x},${y}`)) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(
-              screenPos.x + effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
+            drawWalkTileOverlay(
+              ctx,
+              screenPos.x,
+              screenPos.y,
+              effectiveTileW,
+              effectiveTileH,
             );
-            ctx.lineTo(screenPos.x, screenPos.y + effectiveTileH);
-            ctx.lineTo(
-              screenPos.x - effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
-            );
-            ctx.closePath();
-            ctx.fillStyle = "rgba(0,200,80,0.35)";
-            ctx.fill();
-            ctx.strokeStyle = "rgba(0,220,100,0.8)";
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-            ctx.restore();
           }
 
           // H3 Barrier tile — now rendered as a 6-high tower in the unified
@@ -7685,25 +7659,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
           // Blue spell range highlight
           if (spellTiles.has(`${x},${y}`)) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(
-              screenPos.x + effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
+            drawSpellRangeOverlay(
+              ctx,
+              screenPos.x,
+              screenPos.y,
+              effectiveTileW,
+              effectiveTileH,
             );
-            ctx.lineTo(screenPos.x, screenPos.y + effectiveTileH);
-            ctx.lineTo(
-              screenPos.x - effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
-            );
-            ctx.closePath();
-            ctx.fillStyle = "rgba(30,100,255,0.35)";
-            ctx.fill();
-            ctx.strokeStyle = "rgba(60,140,255,0.85)";
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-            ctx.restore();
           }
         }
       }
