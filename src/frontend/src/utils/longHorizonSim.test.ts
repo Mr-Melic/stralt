@@ -12,8 +12,14 @@ import {
   BOSS_RUSH_ROOM0_CATALOG_DOKA,
   BOSS_RUSH_ROOM9_CATALOG_DOKA,
   CATALOG_BOSS_HP_SAMPLE,
+  CHAOS_INITIATIVE_DISPATCHES_BEFORE_SHUFFLE,
+  CHAOS_INITIATIVE_SHUFFLES_WHEN_INDEX_WRAPS_TO_ZERO,
+  CRUSH_MELEE_SKIPS_PLAYER_TAKES_DAMAGE,
+  CRUSH_MELEE_USES_GET_STAT_MODIFIER,
   DOKA_HEAL_HP_PER_DOKA,
   ENEMY_SUMMON_CAP_SIM,
+  FALLBACK_CRUSH_RANGE,
+  FALLBACK_FIREBOLT_RANGE,
   GLASS_REALM_DMG_MULT,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
@@ -28,6 +34,9 @@ import {
   MIRROR_FIELD_REFLECT_CHANCE,
   MIRROR_FIELD_SKIPS_PLAYER_TAKES_DAMAGE,
   OVERWORLD_SPAWN_SETS_SIDE,
+  PAPER_WINDSTORM_ADVERTISED_RANGE_REDUCTION,
+  PAPER_WINDSTORM_PLAYER_MISS_CHANCE,
+  PAPER_WINDSTORM_RANGE_REDUCTION_APPLIED,
   PLAYER_CREATE_EVASION,
   PLAYER_CREATE_INIT,
   PLAYER_CREATE_RESILIENCE,
@@ -54,6 +63,8 @@ import {
   bossRushRoomDoka,
   bossRushRoomXp,
   catalogSummonMaxHp,
+  chaosInitiativePlayerFirstChance,
+  crushMeleeResIfShieldApplied,
   crushOverKitRatio,
   damageAfterPlayerResPasses,
   damageAfterResThenMapMods,
@@ -84,6 +95,7 @@ import {
   firstLevelFormulaApExceedsPersistCap,
   firstLevelFormulaFrostCastsAtLeast,
   firstLevelFormulaMpAtLeast,
+  firstLevelFormulaMpCoversGridWalk,
   firstLevelFormulaSummonCastsAtLeast,
   firstLevelFrostDumpSelfDamageExceeds,
   firstLevelFrostDumpWithMultExceeds,
@@ -117,9 +129,12 @@ import {
   frostCastsPerTimerSecond,
   frostCastsWithTimestepRefill,
   frostDumpMirrorFieldExpectedSelfDamage,
+  frostDumpPaperWindstormExpectedHits,
+  frostDumpPaperWindstormExpectedMisses,
   frostDumpVoidMirrorSelfDamage,
   frostPreCritDmgBm,
   glassChip1,
+  gridWalkMpCost,
   groundDokaMean,
   healthPotionDokaPerHp,
   healthPotionHpRestored,
@@ -138,6 +153,7 @@ import {
   overlayEnemyAtk,
   overlayEnemyMp,
   overworldPickMaxLevel,
+  paperWindstormEnemyMissChance,
   passiveRegenSecondsToFull,
   playerCombatantsRefHasPlayerEntry,
   playerFrostCastsPerTurn,
@@ -161,6 +177,7 @@ import {
   starterFrostCooldownTurns,
   starterSacrificeApCost,
   starterSacrificeCooldownTurns,
+  starterShieldResMultiplier,
   starterTimestepApCost,
   starterTimestepCooldownTurns,
   starterTimestepIsOncePerBattle,
@@ -174,6 +191,7 @@ import {
   victoryHpFloor,
   voidMirrorFamilyChance,
   voidMirrorReflect,
+  walkCostPerTile,
   worldBossChip1FrostTurns,
   worldBossEnemyLevel,
   xpNeedExactAsNumber,
@@ -737,5 +755,68 @@ assert.equal(frostCastsPerTimerSecond(formulaAp(100_000), 15), 1336 / 15);
 assert.equal(report.timeWarpVsFrostDump.warpSeconds, 15);
 assert.equal(report.timeWarpVsFrostDump.castsAt100000, 1336);
 assert.equal(report.timeWarpVsFrostDump.firstLevel100FormulaCasts, 7300);
+
+assert.equal(PAPER_WINDSTORM_PLAYER_MISS_CHANCE, 0.3);
+assert.equal(PAPER_WINDSTORM_ADVERTISED_RANGE_REDUCTION, 0.5);
+assert.equal(PAPER_WINDSTORM_RANGE_REDUCTION_APPLIED, false);
+assert.equal(paperWindstormEnemyMissChance(FALLBACK_CRUSH_RANGE), 0);
+assert.equal(paperWindstormEnemyMissChance(FALLBACK_FIREBOLT_RANGE), 0.5);
+assert.equal(frostDumpPaperWindstormExpectedHits(formulaAp(325)), 7 * 0.7);
+assert.equal(frostDumpPaperWindstormExpectedMisses(formulaAp(325)), 7 * 0.3);
+assert.equal(
+  frostDumpPaperWindstormExpectedHits(formulaAp(100_000)),
+  1336 * 0.7,
+);
+assert.equal(
+  frostDumpPaperWindstormExpectedMisses(formulaAp(100_000)),
+  1336 * 0.3,
+);
+assert.equal(report.paperWindstormMissAsymmetry.crushMissChance, 0);
+assert.equal(report.paperWindstormMissAsymmetry.fireboltMissChance, 0.5);
+assert.equal(report.paperWindstormMissAsymmetry.rangeReductionApplied, false);
+assert.equal(
+  report.paperWindstormMissAsymmetry.expectedHitsAt100000,
+  1336 * 0.7,
+);
+
+assert.equal(CHAOS_INITIATIVE_SHUFFLES_WHEN_INDEX_WRAPS_TO_ZERO, true);
+assert.equal(CHAOS_INITIATIVE_DISPATCHES_BEFORE_SHUFFLE, true);
+assert.equal(chaosInitiativePlayerFirstChance(4), 0.25);
+assert.equal(chaosInitiativePlayerFirstChance(9), 1 / 9);
+assert.equal(report.chaosInitiativeVsInitFreeze.pPlayerFirst3Pack, 0.25);
+assert.ok(report.chaosInitiativeVsInitFreeze.pInitFirstAt1 > 0.05);
+assert.ok(report.chaosInitiativeVsInitFreeze.pInitFirstAt250 < 0.02);
+
+assert.equal(starterShieldResMultiplier(), 1.3);
+assert.equal(crushMeleeResIfShieldApplied(), 13);
+assert.equal(CRUSH_MELEE_SKIPS_PLAYER_TAKES_DAMAGE, true);
+assert.equal(CRUSH_MELEE_USES_GET_STAT_MODIFIER, false);
+assert.equal(report.starterShieldSkippedOnCrush.resIfShieldApplied, 13);
+assert.equal(
+  report.starterShieldSkippedOnCrush.crushUsesGetStatModifier,
+  false,
+);
+
+assert.equal(walkCostPerTile({}), 1);
+assert.equal(walkCostPerTile({ slimeFlood: true }), 2);
+assert.equal(walkCostPerTile({ frozenTerrain: true }), 2);
+assert.equal(walkCostPerTile({ slimeFlood: true, frozenTerrain: true }), 4);
+assert.equal(gridWalkMpCost({}), 16);
+assert.equal(gridWalkMpCost({ slimeFlood: true }), 32);
+assert.equal(gridWalkMpCost({ slimeFlood: true, frozenTerrain: true }), 64);
+assert.equal(firstLevelFormulaMpAtLeast(16), 300);
+assert.equal(firstLevelFormulaMpCoversGridWalk({}), 300);
+assert.equal(firstLevelFormulaMpCoversGridWalk({ slimeFlood: true }), 700);
+assert.equal(
+  firstLevelFormulaMpCoversGridWalk({
+    slimeFlood: true,
+    frozenTerrain: true,
+  }),
+  1500,
+);
+assert.equal(formulaMp(1500), 64);
+assert.equal(report.slimeFrozenWalkMpVsGrid.costStacked, 4);
+assert.equal(report.slimeFrozenWalkMpVsGrid.firstLevelCoversStacked, 1500);
+assert.equal(report.slimeFrozenWalkMpVsGrid.firstLevelCoversPlain, 300);
 
 console.log("longHorizonSim.test: ok");

@@ -17,6 +17,7 @@ import {
   MAP_MODIFIER_IRON_CURSE_RES_BONUS,
   MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT,
   MAP_MODIFIER_NORMAL_TIMER,
+  MAP_MODIFIER_PAPER_WINDSTORM_RANGE_REDUCTION,
   MAP_MODIFIER_TIME_WARP_TIMER,
   MAP_MODIFIER_TITANS_VIGOR_HP_BONUS,
   MAP_MODIFIER_TITANS_VIGOR_MAX_MULTIPLIER,
@@ -36,6 +37,7 @@ import {
   computeAITier,
   pickEnemyLevelFromTiers,
 } from "../engine/combatMath.ts";
+import { enemyWalkCostPerTile } from "../engine/enemyWalkMp.ts";
 import {
   dungeonChainCompletionBonus,
   dungeonDokaMultiplierFor,
@@ -1603,6 +1605,106 @@ export function frostCastsPerTimerSecond(
   return playerFrostCastsPerTurn(ap) / secs;
 }
 
+/**
+ * Paper Windstorm live miss vs advertised range.
+ *
+ * Registry hook is a no-op marker (`mapModifiers.ts`). The constant
+ * `MAP_MODIFIER_PAPER_WINDSTORM_RANGE_REDUCTION` (0.5) is never read by
+ * targeting. Live WX:
+ *   - player `spellEngine` / `paperWindstormMiss`: 30% miss, any range
+ *   - enemy kit-cast and fallback Fire Bolt: 50% miss when range > 1
+ *   - fallback Crush range 1 never rolls the miss
+ */
+export const PAPER_WINDSTORM_PLAYER_MISS_CHANCE = 0.3;
+export const PAPER_WINDSTORM_ENEMY_MISS_CHANCE_IF_RANGE_GT_1 = 0.5;
+export const PAPER_WINDSTORM_ADVERTISED_RANGE_REDUCTION =
+  MAP_MODIFIER_PAPER_WINDSTORM_RANGE_REDUCTION;
+export const PAPER_WINDSTORM_RANGE_REDUCTION_APPLIED = false;
+export const FALLBACK_CRUSH_RANGE = 1;
+export const FALLBACK_FIREBOLT_RANGE = 3;
+
+export function paperWindstormEnemyMissChance(range: number): number {
+  const r = Number(range);
+  if (!Number.isFinite(r) || r <= 1) return 0;
+  return PAPER_WINDSTORM_ENEMY_MISS_CHANCE_IF_RANGE_GT_1;
+}
+
+export function frostDumpPaperWindstormExpectedHits(ap: number): number {
+  return playerFrostCastsPerTurn(ap) * (1 - PAPER_WINDSTORM_PLAYER_MISS_CHANCE);
+}
+
+export function frostDumpPaperWindstormExpectedMisses(ap: number): number {
+  return playerFrostCastsPerTurn(ap) * PAPER_WINDSTORM_PLAYER_MISS_CHANCE;
+}
+
+/**
+ * Chaos Initiative (`mapModifiers.ts` onTurnOrderSort): Fisher-Yates on
+ * non-summon owners, summons trailing their owner. WX applies it when
+ * `currentTurnIndexRef === 0` *after* dispatching `prevOrder[0]`
+ * (`WorldExploration.tsx` 14717–14721). At 250+ INIT freeze already puts
+ * the player last (09-21-001); this shuffle is then the only remaining
+ * player-first lottery, P = 1 / livingOwners (player + enemies).
+ */
+export const CHAOS_INITIATIVE_SHUFFLES_WHEN_INDEX_WRAPS_TO_ZERO = true;
+export const CHAOS_INITIATIVE_DISPATCHES_BEFORE_SHUFFLE = true;
+
+export function chaosInitiativePlayerFirstChance(livingOwners: number): number {
+  const n = Math.max(1, Math.floor(Number(livingOwners) || 1));
+  return 1 / n;
+}
+
+/**
+ * Starter Shield (`starter-shield`) is a 1.3× RES buff. Fallback Crush
+ * melee reads `characterStats.res` once and writes HP directly — it does
+ * **not** enter `playerTakesDamage` (where `getStatModifier` would apply
+ * the buff) and does **not** multiply RES by the Shield row. Shield Charm
+ * absorb 20 still runs on that melee path (09-25-002).
+ */
+export const CRUSH_MELEE_SKIPS_PLAYER_TAKES_DAMAGE = true;
+export const CRUSH_MELEE_USES_GET_STAT_MODIFIER = false;
+export const STARTER_SHIELD_ID = "starter-shield";
+
+export function starterShieldResMultiplier(): number {
+  const spell = starterSpells.find((s) => s.id === STARTER_SHIELD_ID);
+  const m = Number(spell?.buffModifier);
+  return Number.isFinite(m) && m > 0 ? m : 1.3;
+}
+
+export function crushMeleeResIfShieldApplied(
+  createRes = PLAYER_CREATE_RES,
+): number {
+  return createRes * starterShieldResMultiplier();
+}
+
+/**
+ * Slime Flood and Frozen Terrain each double walk MP via
+ * `mapModifierRegistry.applyMpCost` (they stack). 09-28-003: formula MP
+ * covers a 16-tile grid walk at 300. Stacked 4× moves that breakpoint.
+ */
+export function walkCostPerTile(opts: {
+  slimeFlood?: boolean;
+  frozenTerrain?: boolean;
+}): number {
+  return enemyWalkCostPerTile({
+    slimeFlood: opts.slimeFlood === true,
+    frozenTerrain: opts.frozenTerrain === true,
+  });
+}
+
+export function gridWalkMpCost(opts: {
+  slimeFlood?: boolean;
+  frozenTerrain?: boolean;
+}): number {
+  return WORLD_GRID_SIZE * walkCostPerTile(opts);
+}
+
+export function firstLevelFormulaMpCoversGridWalk(opts: {
+  slimeFlood?: boolean;
+  frozenTerrain?: boolean;
+}): number | null {
+  return firstLevelFormulaMpAtLeast(gridWalkMpCost(opts));
+}
+
 /** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
 export const HAZARD_LAVA_MIN = 8;
 export const HAZARD_LAVA_MAX = 15;
@@ -2926,6 +3028,89 @@ export function runLongHorizonSim() {
       ),
       firstLevel100FormulaCasts: firstLevelFormulaFrostCastsAtLeast(100),
       timerRunsOnPlayerAndEnemyTurns: true,
+    },
+    paperWindstormMissAsymmetry: {
+      playerMissChance: PAPER_WINDSTORM_PLAYER_MISS_CHANCE,
+      enemyMissChanceIfRangeGt1:
+        PAPER_WINDSTORM_ENEMY_MISS_CHANCE_IF_RANGE_GT_1,
+      advertisedRangeReduction: PAPER_WINDSTORM_ADVERTISED_RANGE_REDUCTION,
+      rangeReductionApplied: PAPER_WINDSTORM_RANGE_REDUCTION_APPLIED,
+      crushRange: FALLBACK_CRUSH_RANGE,
+      fireboltRange: FALLBACK_FIREBOLT_RANGE,
+      crushMissChance: paperWindstormEnemyMissChance(FALLBACK_CRUSH_RANGE),
+      fireboltMissChance: paperWindstormEnemyMissChance(
+        FALLBACK_FIREBOLT_RANGE,
+      ),
+      expectedHitsAt325: frostDumpPaperWindstormExpectedHits(formulaAp(325)),
+      expectedMissesAt325: frostDumpPaperWindstormExpectedMisses(
+        formulaAp(325),
+      ),
+      expectedHitsAt100000: frostDumpPaperWindstormExpectedHits(
+        formulaAp(100_000),
+      ),
+      expectedMissesAt100000: frostDumpPaperWindstormExpectedMisses(
+        formulaAp(100_000),
+      ),
+      stackedExpectedHitsAt100000:
+        playerFrostCastsPerTurnWithStackedArcane(formulaAp(100_000)) *
+        (1 - PAPER_WINDSTORM_PLAYER_MISS_CHANCE),
+    },
+    chaosInitiativeVsInitFreeze: {
+      shufflesWhenIndexWrapsToZero:
+        CHAOS_INITIATIVE_SHUFFLES_WHEN_INDEX_WRAPS_TO_ZERO,
+      dispatchesBeforeShuffle: CHAOS_INITIATIVE_DISPATCHES_BEFORE_SHUFFLE,
+      pPlayerFirst3Pack: chaosInitiativePlayerFirstChance(4),
+      pPlayerFirst8Pack: chaosInitiativePlayerFirstChance(9),
+      pInitFirstAt1: monteCarloPlayerWinsInitiative(1),
+      pInitFirstAt250: monteCarloPlayerWinsInitiative(250),
+      playerCreateInit: PLAYER_CREATE_INIT,
+    },
+    starterShieldSkippedOnCrush: {
+      shieldId: STARTER_SHIELD_ID,
+      shieldResMult: starterShieldResMultiplier(),
+      createRes: PLAYER_CREATE_RES,
+      resIfShieldApplied: crushMeleeResIfShieldApplied(),
+      crushSkipsPlayerTakesDamage: CRUSH_MELEE_SKIPS_PLAYER_TAKES_DAMAGE,
+      crushUsesGetStatModifier: CRUSH_MELEE_USES_GET_STAT_MODIFIER,
+      firstEnemyCrushOneShotsPlayer1: firstEnemyLevelFallbackCrushOneShots(1),
+    },
+    slimeFrozenWalkMpVsGrid: {
+      costPlain: walkCostPerTile({}),
+      costSlime: walkCostPerTile({ slimeFlood: true }),
+      costFrozen: walkCostPerTile({ frozenTerrain: true }),
+      costStacked: walkCostPerTile({
+        slimeFlood: true,
+        frozenTerrain: true,
+      }),
+      gridTiles: WORLD_GRID_SIZE,
+      gridCostPlain: gridWalkMpCost({}),
+      gridCostDoubled: gridWalkMpCost({ slimeFlood: true }),
+      gridCostStacked: gridWalkMpCost({
+        slimeFlood: true,
+        frozenTerrain: true,
+      }),
+      firstLevelCoversPlain: firstLevelFormulaMpCoversGridWalk({}),
+      firstLevelCoversDoubled: firstLevelFormulaMpCoversGridWalk({
+        slimeFlood: true,
+      }),
+      firstLevelCoversStacked: firstLevelFormulaMpCoversGridWalk({
+        slimeFlood: true,
+        frozenTerrain: true,
+      }),
+      formulaMpAt1: formulaMp(1),
+      formulaMpAt300: formulaMp(300),
+      formulaMpAt700: formulaMp(700),
+      formulaMpAt1500: formulaMp(1500),
+      formulaMpAt100000: formulaMp(100_000),
+      stackedCostOverMpAt1:
+        walkCostPerTile({ slimeFlood: true, frozenTerrain: true }) /
+        formulaMp(1),
+      stackedCostOverMpAt1500:
+        walkCostPerTile({ slimeFlood: true, frozenTerrain: true }) /
+        formulaMp(1500),
+      stackedCostOverMpAt100000:
+        walkCostPerTile({ slimeFlood: true, frozenTerrain: true }) /
+        formulaMp(100_000),
     },
   };
 }
