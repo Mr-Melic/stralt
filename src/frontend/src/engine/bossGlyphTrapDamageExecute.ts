@@ -13,9 +13,10 @@
  * `res.damageToPlayer` writer (~16025) would debit 15 *if* an abilityResult
  * carried it, but nothing produces a GLYPH_TRAP result on strike.
  *
- * Unique leftover of **#1212** / mis-attributed in **#1094** to **#925** /
- * **#1089** (those are INK_VEIL occupancy and Pages-of-Doom decide — not
- * the 15-damage execute). Distinct from:
+ * Unique leftover of **#1105** (explicitly: "GLYPH_TRAP is not in
+ * decidePaleArchivistAction — leave that apply leftover"). **#1094**
+ * mis-attributed the 15-damage execute to **#925** / **#1089** (INK_VEIL
+ * occupancy snap and Pages-of-Doom decide). Distinct from:
  * - **#925** INK_VEIL portal/crumb snap (placement, not tax)
  * - **#1105** kit-first Cursed Wound vs Ink Veil (decide places glyphs)
  * - **#1094** Enthroned Void ANCHOR walk tax 20 / DAMAGE_IMMUNE
