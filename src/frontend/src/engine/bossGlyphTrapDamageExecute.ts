@@ -81,7 +81,9 @@ function finiteNumber(n: unknown): number | null {
   return v;
 }
 
-export function isGlyphTrapAbility(ability: string | null | undefined): boolean {
+export function isGlyphTrapAbility(
+  ability: string | null | undefined,
+): boolean {
   return ability === GLYPH_TRAP_ABILITY;
 }
 

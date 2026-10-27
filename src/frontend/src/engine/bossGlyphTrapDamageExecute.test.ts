@@ -78,10 +78,7 @@ describe("GLYPH_TRAP catalog / ability identity", () => {
     assert.ok(GLYPH_TRAP_LOG_NEEDLE.includes("15 damage"));
 
     const types = readFileSync(
-      join(
-        dirname(fileURLToPath(import.meta.url)),
-        "../types/bossTypes.ts",
-      ),
+      join(dirname(fileURLToPath(import.meta.url)), "../types/bossTypes.ts"),
       "utf8",
     );
     assert.ok(types.includes('GLYPH_TRAP = "GLYPH_TRAP"'));
