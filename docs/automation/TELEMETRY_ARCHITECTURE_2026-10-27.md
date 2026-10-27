@@ -71,7 +71,7 @@ Balance analyst and `longHorizonSim.telemetry.available` must stay **WAITING_FOR
 | Topic | 2026-10-26 (#1116) | 2026-10-27 (this run) |
 | :--- | :--- | :--- |
 | `main` HEAD | `0f5363f` | **Same SHA.** No sidecar landed. EVENT_SOURCE lines **re-verified identical**. |
-| Open PRs targeting `main` | 778 | **831** (`gh api graphql` `pullRequests(states:OPEN).totalCount`). Oldest still **#327** then **#331**. Latest **#1162** (2026-10-26 18:27Z, Spellbook Save/Cancel/upgrade 44px a11y). |
+| Open PRs targeting `main` | 778 | **843** (`gh api graphql` `pullRequests(states:OPEN).totalCount`; 831 at first poll, 843 by stack-compat). Oldest still **#327** then **#331**. Latest **#1174** (2026-10-27 00:16Z, Latch Gate map choke — not Q-010). |
 | Unmerged GTAD siblings | #352, #422, #450, #527, #583, #641, #682, #722, #806, #816, #884, #931, #981, #1047 | Those fourteen plus **#1116**. This PR adds **unique 10-27 files only**. README left untouched. |
 | Extra persist PRs (not EVENT_SOURCE) | leftover-XP through **#1045/#1046/#1070/#1088/#1092/#1099** plus earlier remount-keep / wallet-lie | Plus 2026-10-26 leftover-Doka remount-keep **#1129/#1145/#1147/#1149/#1151/#1153/#1157**. Shrine settle **#1156** is **not** N-006 / Q-015 until merged. Q-018 helper still **absent** on `main` (`unseeded*KeepWriteSkip` zero hits). |
 | Combat kit-parity burst | Through 10-25 pack/summoner/boss kit + hazard soak **#1079/#1084/#1097/#1100** | Continues 2026-10-26 **#1113/#1123/#1136/#1142/#1148/#1150/#1152/#1155/#1158/#1159/#1160** (pack/summoner/boss kit, advertised Glass Realm / Iron Curse / Vampiric Ground, Plague Zone soak, player-summon walk tax). **Not** S-007 / E-006 / N-004 / C-007 EVENT_SOURCE until merged. |
@@ -82,7 +82,7 @@ Balance analyst and `longHorizonSim.telemetry.available` must stay **WAITING_FOR
 | Boss Rush **#803** | OPEN | Still **OPEN**. |
 | Q-018 (`unseeded*KeepWriteSkip`) | Deferred; helper **not** on `main` | Still **absent** (`rg` zero hits under `src/`). Q-016’s `shouldSkipAbsoluteDokaWrite` (**202–212**) **is** on `main`. Leftover-XP **and leftover-Doka** remount PRs are the same class: unmerged, not a counter. |
 | Family-roll citation | spawnPolicy + WX **5864**; WX **5940** is camera | **Unchanged.** Use `spawnPolicy.ts` + WX **5864**. |
-| Sibling TBC / TADD | 10-25 **#1053** WAITING / **#1048** skip fourteenth; 10-26 **#1108** WAITING; no 10-26 TADD at 10-26 write | 10-26 TADD **#1118** skip fifteenth Health matrix now in the queue. No 10-27 TBC/TADD at this write. Stay WAITING. |
+| Sibling TBC / TADD | 10-25 **#1053** WAITING / **#1048** skip fourteenth; 10-26 **#1108** WAITING / **#1118** skip fifteenth | 10-27 TBC **#1165** WAITING appeared during this cron; no 10-27 TADD at this write. Stay WAITING. |
 | Frozen duration | 53 days | **54 days** (2026-09-03 → 2026-10-27). Not a player regression. |
 
 Merged-on-`main` telemetry PRs remain docs only (#130 architecture, #203 09-01, #295 09-02). **No increment sidecar shipped.** 54 days of `main` freeze is **not** a player regression.
@@ -1188,4 +1188,4 @@ STATUS: PROPOSED
 | `longHorizonSim` | Keep `telemetry.available = false`. | Flip only when increment/snapshot APIs exist **and** are populated. |
 | Expansion / discovery / formations / world-events | Design docs stay design. | Add metric keys only when a persist/event source exists. E-008 summoner roll is live; `elite_patrol` is not. |
 
-Related: `AQA-2026-08-30-012` (still NEW; shop site patched). `GTAD-2026-09-01-*` remain the implementation tickets; **read this file for line numbers and GameKey rules.** `GTAD-2026-10-27-*` are additive deltas only (54-day freeze, 831-PR queue, 2026-10-26 leftover-Doka remount-keep / kit-parity / advertised-combat continuation). Unmerged GTAD siblings #352…#1116 are the same policy with older queue counts — implementers should prefer **this** file’s lines once it is the newest contract they can see, without concatenating duplicate `export function` copies if restacking docs accidentally overlap.
+Related: `AQA-2026-08-30-012` (still NEW; shop site patched). `GTAD-2026-09-01-*` remain the implementation tickets; **read this file for line numbers and GameKey rules.** `GTAD-2026-10-27-*` are additive deltas only (54-day freeze, 843-PR queue, 2026-10-26 leftover-Doka remount-keep / kit-parity / advertised-combat continuation). Unmerged GTAD siblings #352…#1116 are the same policy with older queue counts — implementers should prefer **this** file’s lines once it is the newest contract they can see, without concatenating duplicate `export function` copies if restacking docs accidentally overlap.
