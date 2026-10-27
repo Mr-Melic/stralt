@@ -13,6 +13,7 @@
  * Wave 13: WDD-2026-10-21-001. Wave 14: WDD-2026-10-22-001.
  * Wave 15: WDD-2026-10-23-001. Wave 16: WDD-2026-10-24-001.
  * Wave 17: WDD-2026-10-25-001. Wave 18: WDD-2026-10-26-001.
+ * Wave 19: WDD-2026-10-27-001.
  *
  * This module does NOT generate maps, advance turns, or change combat damage
  * formulas. Placement must run after `evaluateSolvability` / finalize and
@@ -86,7 +87,8 @@ export type CatalogWave =
   | 15
   | 16
   | 17
-  | 18;
+  | 18
+  | 19;
 
 /** Exploration is `RunMode "none"`. Death Realm is always quiet. */
 export type WorldFeatureRunMode = "exploration" | "dungeon" | "bossRush";
@@ -137,7 +139,7 @@ export interface WorldFeature {
 }
 
 /** Newest designed wave. Overlay wiring still requires a human ACTION_ID pick. */
-export const LATEST_CATALOG_WAVE = 18 as const;
+export const LATEST_CATALOG_WAVE = 19 as const;
 
 export const RARITY_WEIGHT: Record<WorldFeatureRarity, number> = {
   common: 40,
@@ -8860,6 +8862,483 @@ export const WORLD_FEATURES: WorldFeature[] = [
     slot: "event",
     hpTaxPctOfMax: 0.03,
     catalogWave: 18,
+  },
+  {
+    id: "WF-HAZ-MATCH_SEAM",
+    name: "Match Seam",
+    category: "hazard",
+    mechanic:
+      "Balanced-slate seams. Stepping on them costs a fraction of current max HP only while the stepper's remaining AP equals remaining MP. Mismatched remaining pools are free floor. Walkable. Distinct from Ready Sill / Ready Hour (remaining AP equals max AP), Spent Seam (dump-last-AP tax), Last Seam (dump-last-MP tax), Plant Font (heal at remaining MP 0), Empty Font (heal at remaining AP 0), and Even Seam (even-round free path).",
+    playerDecision:
+      "Cut through while AP and MP remaining disagree, dump one pool to match and pay, or spend MP to path around.",
+    relativeDifficulty: "medium",
+    rarity: "common",
+    visual: visual(
+      "match-seam",
+      "#283038",
+      "#70b8c8",
+      "Match Seam — step tax as % max HP only while remaining AP equals remaining MP",
+    ),
+    solvability:
+      "Never on spawn±3 or portals. Never the only walkable cell in a corridor — seams occupy floor but do not block.",
+    combatRules:
+      "HP via recordChallengeDamageTaken (explore) or recordInBattleChallengeDamage (in battle). Match check is remaining AP === remaining MP at the occupancy step. Wounded AI treats a matched seam step like lava. Counts toward MAX_HAZARD_TILES.",
+    counterplay:
+      "Cross while the two remaining pools disagree, walk around, teleport (metadata targetType ground/self), or send a summon that is already mismatched.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.04,
+    extraHazardCount: { min: 4, max: 8 },
+    catalogWave: 19,
+  },
+  {
+    id: "WF-HAZ-MATCH_CINDER",
+    name: "Match Cinder",
+    category: "moving_hazard",
+    mechanic:
+      "A single cinder orb. At round start it steps one tile toward the living unit whose remaining AP currently equals remaining MP (painted balance-chevron). Ties prefer the lowest combatant id. If nobody is matched, it sits still. Landing on a unit costs a max-HP tax. Out of battle it still hunts a matched body on wander ticks. Distinct from Busy Cinder (most AP spent last round), Lean Cinder (fewest remaining AP), Cast Cinder (last SpellConfig spender), Hunting Lantern (last MP spender), Hurt Cinder (lowest HP%), and Plant Picket (stands at remaining MP 0).",
+    playerDecision:
+      "Keep AP and MP remaining different so it sits or hunts a matched foe, equalize to bait it, or step off its balance-chevron.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "match-cinder",
+      "#243038",
+      "#68c0d0",
+      "Match Cinder — steps 1 toward a living unit whose remaining AP equals remaining MP",
+    ),
+    solvability:
+      "Never starts on spawn±3 or portals. A floor path around the orb always remains. The cinder is not a wall.",
+    combatRules:
+      "Advances on round start (not mid-turn). Prefers the cardinal that decreases Chebyshev distance to a currently matched unit (remaining AP === remaining MP). Tax uses challenge HP recorders. Does not skip turns or spend AP/MP. Occupies 1 hazard budget. Reads remaining AP and remaining MP, never a spell name.",
+    counterplay:
+      "Stay mismatched so it sits; equalize a foe and end off its balance-chevron; push/attract a matched foe onto that cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.05,
+    extraHazardCount: { min: 1, max: 1 },
+    catalogWave: 19,
+  },
+  {
+    id: "WF-TRP-MATCH_PLATE",
+    name: "Match Plate",
+    category: "trap",
+    mechanic:
+      "A visible rune plate. Stepping onto it while remaining AP does not equal remaining MP is free and leaves the plate armed. The first step onto it this map while remaining AP equals remaining MP costs that traveler a max-HP tax once; then the plate becomes floor. Distinct from Glyph Plate (any enter), Chevron Plate (one painted facing), Skew Plate (diagonal enter), Spent Plate (remaining AP 0), Dash Plate (after an MP spend), and Camp Plate (end-turn).",
+    playerDecision:
+      "Step on while mismatched, dump one pool to match and spend the trap, or bait an enemy in while they are matched.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "match-plate",
+      "#203038",
+      "#80c8d8",
+      "Match Plate — mismatched enter free; first matched enter one-shot %HP, then floor",
+    ),
+    solvability:
+      "Walkable before and after. Never on spawn±3 or portals. Does not seal a path. Always visible from adjacent tiles.",
+    combatRules:
+      "Trigger keys off remaining AP === remaining MP at the occupancy step, once. Uses challenge HP recorders. No hidden tiles. Does not change spell damage math.",
+    counterplay:
+      "Enter mismatched; send a matched summon; shove a matched foe on; ignore it.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.08,
+    extraHazardCount: { min: 1, max: 2 },
+    catalogWave: 19,
+  },
+  {
+    id: "WF-TER-MATCH_PANE",
+    name: "Match Pane",
+    category: "destructible_terrain",
+    mechanic:
+      "A balanced ice sheet occupies a cell: units may walk through it, but it blocks line of sight. Adjacent 1 AP (no spell) smashes it to clear floor only while remaining AP equals remaining MP before the spend. A mismatched smash is illegal and spends nothing. Distinct from Frost Pane (1 AP smash always), Brace Column (walk+LoS wall with brace/smash), Reed Screen (open LoS), Slit Wall (rotate a facing), and Hush Curtain (blocks spells).",
+    playerDecision:
+      "Equalize then spend 1 AP for LoS, hide behind the pane, or walk through and accept the blind.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "match-pane",
+      "#243848",
+      "#88d0e0",
+      "Match Pane — walkable LoS block; 1 AP smash only while remaining AP equals remaining MP",
+    ),
+    solvability:
+      "Does not block walk. Never on spawn±3 or portals. Smash is optional — the map is solvable with the pane intact.",
+    combatRules:
+      "Smash is an AP occupancy action, not a spell (no name heuristics). Legal only while remaining AP === remaining MP before the 1 AP. No damage. Counts as a wall for LoS until smashed. Walk occupancy is floor.",
+    counterplay:
+      "Ignore it and walk through; equalize then smash when a linear shot is worth 1 AP; stand behind it against linear spells.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-OBS-MATCH_SILL",
+    name: "Match Sill",
+    category: "temporary_obstacle",
+    mechanic:
+      "A short-path corridor cell starts as a wall. It becomes floor for the rest of the map after the player ends a turn with remaining AP equal to remaining MP. Distinct from Ready Sill (remaining AP equals max AP), Spent Sill (remaining AP 0), Plant Font (heal at remaining MP 0), Hale Sill (≥80% HP), and Empty Step (0 AP pads).",
+    playerDecision:
+      "Equalize remaining AP and MP then end the turn to open the short path, take the long way, or wait until a round you already planned to match.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "match-sill",
+      "#203038",
+      "#70c0d0",
+      "Match Sill — wall until you end a turn with remaining AP equal to remaining MP; then floor",
+    ),
+    solvability:
+      "Place only when a second spawn→portal route already exists. Evaluate solvability as if the sill were already a wall. Never the only exit. Never on spawn±3 or portals.",
+    combatRules:
+      "Wall occupancy until a player end-of-turn with remaining AP === remaining MP. Does not deal damage. Do not place on the same cell as another blocksWalk feature.",
+    counterplay:
+      "Take the long path; open it on a turn you already expected to match; teleport past if metadata allows.",
+    rewardPath: "none",
+    blocksWalk: true,
+    requiresBypass: true,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-ZON-MATCH_FONT",
+    name: "Match Font",
+    category: "heal_buff_zone",
+    mechanic:
+      "A balanced basin. The first unit to end a turn here this map heals 8% max HP only if remaining AP equals remaining MP; then the tile dries. Ending here mismatched does nothing and does not dry it. Enemies can drink it. Distinct from Ready Hour (remaining AP equals max AP), Empty Font (remaining AP 0), Plant Font (remaining MP 0), Pair Font (Chebyshev ≤ 1), Alone Font (no neighbor), and Shrine Pool (unconditional first drink).",
+    playerDecision:
+      "Equalize then plant on the basin for the heal, deny the enemy the basin, or ignore it.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "match-font",
+      "#1a3038",
+      "#70d0e0",
+      "Match Font — first end-turn here heals 8% max HP only while remaining AP equals remaining MP",
+    ),
+    solvability:
+      "Walkable floor. Never on spawn or portals. Does not block exits.",
+    combatRules:
+      "Heal is a zone tick, not a spell. Match check is remaining AP === remaining MP at end of turn. If the drinker is the player, persist the new HP through saveBattleStats on the progress lock. Does not call applyRewards. Null Field does not strip it.",
+    counterplay:
+      "Step on it after equalizing, shove a drinker off before their end-turn, or ignore when you cannot match.",
+    rewardPath: "saveBattleStats",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: -0.08,
+    catalogWave: 19,
+  },
+  {
+    id: "WF-TEL-MATCH_STEP",
+    name: "Match Step",
+    category: "teleport_tile",
+    mechanic:
+      "Two linked balance-cyan pads. Entering one for 1 MP exits the other only while remaining AP equals remaining MP before the spend. Otherwise the MP is not spent and you stay. If the exit is occupied, the travelers swap. Distinct from Empty Step (remaining AP 0), Spare Step (leftover AP), File Step (on-axis vs a hostile), Skew Step (sharing neither rank nor file), Plant Font (heal at remaining MP 0), and Ready Sill (remaining AP equals max AP).",
+    playerDecision:
+      "Equalize then spend 1 MP to skip, walk, or leave a pad as an enemy escape.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "match-step",
+      "#0e2a38",
+      "#58d0e8",
+      "Match Step — 1 MP pad skip only while remaining AP equals remaining MP before the spend",
+    ),
+    solvability:
+      "Both pads on floor, mutually reachable, never on spawn/portals. The pair is optional — the map is solvable without using it.",
+    combatRules:
+      "Costs 1 MP from the unit's current MP, and only while remaining AP === remaining MP before that spend. Occupancy: destination free, or swap with the unit on the exit. Not a teleport spell — do not key off effectCategory.",
+    counterplay:
+      "Stand on the exit to force a swap, ignore the pair, or stay mismatched so you cannot use it.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-PRT-MATCH_GATE",
+    name: "Match Gate",
+    category: "unstable_portal",
+    mechanic:
+      "An extra sealed portal with a balance pip. It is not an exit until the player has ended a turn with remaining AP equal to remaining MP this map (the pip flips). Then entering rolls a random eligible overworld map and pays a hard applyRewards grant. It is never the only portal. Distinct from Ready Gate (remaining AP equals max AP), Spent Sill (0 AP opens a wall), Still Gate (no-fight), Hearth Gate (full HP), Empty Step (0 AP pads), Near Gate (end adjacent to a hostile), and Plant Font (heal at remaining MP 0).",
+    playerDecision:
+      "Equalize remaining AP and MP once to arm a bonus gamble exit, or take the stable portal you can already see.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "match-portal",
+      "#183038",
+      "#70d0e8",
+      "Match Gate — extra exit after you end a turn with remaining AP equal to remaining MP; unknown map + hard bonus",
+    ),
+    solvability:
+      "Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm (portalRules filter). Never at spawn. Unarmed it does not count as an exit.",
+    combatRules:
+      "Arm keys off a player end-of-turn with remaining AP === remaining MP this map. Entry is a portal transition, not a combat action. Bonus XP/Doka via applyRewards on the persist lock. Death-realm guards still block entry while armed.",
+    counterplay:
+      "Ignore it. The stable exit always works. Do not enter while a Death Realm timer is pending.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: true,
+    allowedRunModes: EXPLORATION_ONLY,
+    slot: "event",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-INV-MATCH_FILE",
+    name: "Match File",
+    category: "rare_invasion",
+    mechanic:
+      "Two extra same-tier elites (hard threat) share a painted file. The first (painted balance pennant) cannot spend AP until the second is dead OR the player ends a turn with remaining AP equal to remaining MP. Occupancy-walks (MP) stay legal. Victory pays hard reward multiplier. Distinct from Ready File (unlock at remaining AP equals max AP), Sheath File (second AP-locked until the first dies or you end adjacent), Mute File (first SpellConfig-locked), Guard File (first walk-locked), and Sleeping Vanguard (both world-asleep until touch).",
+    playerDecision:
+      "Equalize remaining AP and MP so the match elite can act, burst the free spender first, or walk to a portal and leave.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "match-file",
+      "#203038",
+      "#80c8d0",
+      "Match File — two elites; the first cannot spend AP until the second dies or you end a turn with remaining AP equal to remaining MP",
+    ),
+    solvability:
+      "Adds enemies only up to MAX_ENEMIES. Every extra spawn must stay on the flood-fill from player spawn. Skip the roll if the roster cannot fit 2. In dungeon / boss rush they count as hostiles for map-clear.",
+    combatRules:
+      "Match lock is occupancy/turn state, not a buff spell (Null Field does not strip it). Blocks AP spends only — MP occupancy-walks stay legal. Extra spells from usableByEnemy only. Victory → applyRewards. Death Realm / pending death guards still block the encounter start. Does not rewrite combatMath.",
+    counterplay:
+      "Leave through a portal without engaging (exploration), kill the free spender first, or equalize when you want both acting.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 2, max: 2 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-ELT-MATCH_PICKET",
+    name: "Match Picket",
+    category: "elite_patrol",
+    mechanic:
+      "One elite (same-tier × hard) occupies a painted post only while the player's remaining AP equals remaining MP. Mismatch the two remaining pools and the post is empty floor (exploration: they leave, no purse). Touch to fight (hard purse). Dungeon / boss rush: they stand from map start — required for map-clear. Distinct from Ready Picket (remaining AP equals max AP), Plant Picket (remaining MP 0), High Picket (≥80% HP), Spell Picket (after a cast), Spent Sill (0 AP opens a wall), and Drift Sentinel (odd-round).",
+    playerDecision:
+      "Mismatch remaining AP and MP and walk past (exploration), equalize and fight for the hard purse, or (in a run) fight them because they already stand.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "match-picket",
+      "#182830",
+      "#68c0d0",
+      "Match Picket — elite stands while your remaining AP equals remaining MP; mismatch to skip",
+    ),
+    solvability:
+      "Post is floor. Exit reachable without touching. Counts as 1 enemy. In a run they are present from the start.",
+    combatRules:
+      "Appearance keys off the player's remaining AP equaling remaining MP. World contact starts a normal battle (inBattleRef + death guards). Extra spells from usableByEnemy only. Victory → applyRewards. Vanishing in exploration does not call applyRewards.",
+    counterplay:
+      "In exploration, mismatch and pass; equalize when you want the purse; in a run, fight them.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 1, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-TRS-MATCH_CACHE",
+    name: "Match Cache",
+    category: "treasure_encounter",
+    mechanic:
+      "A visible chest with a balance pip. 1 AP adjacent opens it only while remaining AP equals remaining MP before the spend: a medium applyRewards grant and no guardian. A mismatched open is illegal and spends nothing. Distinct from Round Cache (opens rounds 1–2), Late Cache (opens from round 3), Plant Cache (remaining MP 0), Empty Font (heal at remaining AP 0), Trip Cache (open before any MP this map), and Patience Cache (wait-or-open).",
+    playerDecision:
+      "Equalize then spend 1 AP to open, wait and stay mismatched, or walk past.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "match-cache",
+      "#283038",
+      "#c8d070",
+      "Match Cache — 1 AP only while remaining AP equals remaining MP; medium purse, no guardian",
+    ),
+    solvability:
+      "Chest occupies a floor cell but is walkable-adjacent, not a wall. Optional. Never on spawn/portals.",
+    combatRules:
+      "Open cost is AP, not a spell. Legal only while remaining AP === remaining MP before that 1 AP. Credits via applyRewards on the persist lock. Failed mismatched open spends nothing. Do not write Doka with updateCharacter.",
+    counterplay:
+      "Skip the chest; equalize when you can spare 1 AP; ignore it while mismatched.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-SPL-MATCH_TUTOR",
+    name: "Match Tutor",
+    category: "spell_bearing_enemy",
+    mechanic:
+      "One same-tier enemy (medium threat) carries 1 extra SpellConfig row with usableByEnemy === true. If the player ends a turn with remaining AP equal to remaining MP while they still live (any distance), the player gains that spell id as a single remaining cast this map. Killing them before that match teach grants the purse but not the one-cast. They stay hostile after the teach. Distinct from Ready Tutor (remaining AP equals max AP), Plant Tutor (remaining MP 0), Close Tutor (end turn adjacent), Live Tutor (repeating loan while they live), Empty Font (heal at remaining AP 0), and Steel Hour (skip paid-AP spells for a purse).",
+    playerDecision:
+      "Equalize remaining AP and MP and end a turn for a one-shot, burst-kill for the purse, or ignore them.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "match-tutor",
+      "#183038",
+      "#60d0e0",
+      "Match Tutor — end a turn with remaining AP equal to remaining MP while they live for one remaining cast",
+    ),
+    solvability:
+      "Prefer replacing one existing spawn; otherwise +1 if under MAX_ENEMIES. Must remain reachable. In dungeon / boss rush they count as hostiles for map-clear.",
+    combatRules:
+      "Spell list is metadata-only (usableByEnemy, targetType, costs). The one-cast does not call upgradeSpell and does not persist spellLevel arrays. Victory rewards still applyRewards. Teach does not pacify them.",
+    counterplay:
+      "Kite and ignore, equalize for the teach then leave, or burst-kill if you want the purse more than the cast.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 0, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-RSK-MATCH_OATH",
+    name: "Match Oath",
+    category: "risk_reward",
+    mechanic:
+      "A balanced inlay. Voluntarily ending a turn on it flags this map. If the next applyRewards happens while the player's remaining AP equals remaining MP, that credit uses the hard multiplier. If the two remaining pools disagree at credit, the flag pays nothing extra. Snapshot at credit. Distinct from Ready Hour (ended remaining AP equals max AP at least once), Spent Oath (cash out at remaining AP 0), Plant Oath (cash out at remaining MP 0), Spare Oath (leftover AP), and Pair Oath (Chebyshev ≤ 1 at credit).",
+    playerDecision:
+      "Flag a fight you will cash out with remaining AP equal to remaining MP, or stay unflagged and finish mismatched.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "match-oath",
+      "#1a2830",
+      "#70c8d8",
+      "Match Oath — next rewards × hard only if remaining AP equals remaining MP at credit",
+    ),
+    solvability:
+      "Optional floor tile. Map remains solvable if never used. Never on spawn/portals.",
+    combatRules:
+      "Match check is remaining AP === remaining MP at the applyRewards enqueue. Multiplier applies to the next applyRewards enqueue only. Death still uses saveBattleStats. Not a buff spell (Null Field does not strip the flag).",
+    counterplay:
+      "Skip it. Use it only when you expect to stand matched at credit, or dump one pool if you need to void the flag.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-MOD-MATCH_CAST",
+    name: "Match Cast",
+    category: "map_modifier",
+    mechanic:
+      "This map only: a combatant may spend a SpellConfig only while remaining AP equals remaining MP before that spend. A mismatched SpellConfig spend is illegal. Attack Nearest, summons, occupancy-walks, and 0-spell turns are unchanged. Distinct from Once Cast (at most one SpellConfig per turn), Walk Lock (after a walk, no casts), Cast Lock (after a spell, no walks), Short Fuse (cooldown spells locked round 1), Tight Grip (0-MP spells cost 1), and Heavy Incant (high-AP spells cost MP).",
+    playerDecision:
+      "Dump AP or MP until the remaining pools match then cast, Attack Nearest while mismatched, summon a second caster, or skip the fight.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "match-cast",
+      "#203038",
+      "#70c8d8",
+      "Match Cast — SpellConfig spends legal only while remaining AP equals remaining MP before the spend",
+    ),
+    solvability:
+      "Does not alter tiles. Exits unchanged. Attack Nearest, summons, occupancy-walks, and matched-cast turns remain fully usable.",
+    combatRules:
+      "Reads remaining AP === remaining MP before each SpellConfig spend. Attack Nearest is not a spell. Does not rewrite SpellConfig or damage. Round-to-round cooldown clocks are unchanged.",
+    counterplay:
+      "Equalize then cast; Attack Nearest while mismatched; summon a caster; refuse the fight.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-EVT-MATCH_HOUR",
+    name: "Match Hour",
+    category: "world_event",
+    mechanic:
+      "This map only: if the player ended at least one turn with remaining AP equal to remaining MP, the next applyRewards uses the hard multiplier. Always ending mismatched leaves rewards unchanged. Distinct from Ready Hour (remaining AP equals max AP), Spent Oath (cash out at remaining AP 0), Plant Oath (cash out at remaining MP 0), Vacant Hour (skip summons), and Match Gate (arm an extra portal).",
+    playerDecision:
+      "Equalize remaining AP and MP on at least one end-turn for a hard purse, or stay mismatched every turn and accept normal rewards.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "match-hour",
+      "#182830",
+      "#70c8d8",
+      "Match Hour — end at least one turn with remaining AP equal to remaining MP this map for hard rewards",
+    ),
+    solvability: "No tile blocks. Portals unchanged. Leaving is always legal.",
+    combatRules:
+      "Match means remaining AP === remaining MP at player end-of-turn. Multiplier applies only to persist-lock applyRewards. Does not rewrite combatMath. Death still uses saveBattleStats. Optional — never forces a fight.",
+    counterplay:
+      "Equalize once then spend freely, ignore the overlay and stay mismatched, or leave without fighting.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 19,
+  },
+  {
+    id: "WF-ENV-MATCH_DRAFT",
+    name: "Match Draft",
+    category: "environmental_combat",
+    mechanic:
+      "At the end of each combatant turn, if remaining AP equals remaining MP they pay 3% max HP. Ending the turn mismatched is shelter. Painted balance-rings sit around bodies that currently match. Distinct from Spare Draft (dump leftover AP or pay), Stride Draft (dump leftover MP or pay), Isolation Chill (tax when nobody is within 3), Pair Draft (tax when Chebyshev ≤ 1), Ready Hour (remaining AP equals max AP), and Empty Font (heal at remaining AP 0).",
+    playerDecision:
+      "End turns mismatched, equalize and pay, or shove a foe so they end matched.",
+    relativeDifficulty: "hard",
+    rarity: "uncommon",
+    visual: visual(
+      "match-draft",
+      "#242830",
+      "#80c0c8",
+      "Match Draft — 3% max HP if remaining AP equals remaining MP at end of turn",
+    ),
+    solvability:
+      "Does not add walls. Tax is not a wall. Maps remain solvable if every unit always pays.",
+    combatRules:
+      "End-of-turn tax via challenge HP recorders. Match check is remaining AP === remaining MP. Does not skip turns. Does not alter spell damage. Summons pay it too.",
+    counterplay:
+      "End turns mismatched, accept the tax to hold a matched kit, or shove a foe after they have already acted.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    hpTaxPctOfMax: 0.03,
+    catalogWave: 19,
   },
 ];
 

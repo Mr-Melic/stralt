@@ -1,10 +1,10 @@
 # World Dynamics Catalog
 
 **Role:** World Dynamics Designer  
-**Date:** 2026-10-26 (wave 18)  
+**Date:** 2026-10-27 (wave 19)  
 **Canonical IDs:** `src/frontend/src/engine/worldFeatures.ts`  
 **Status:** Designed. Not wired into map generation, the RAF loop, turn advance, or combat damage formulas.  
-**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5) · `WDD-2026-09-23-001` (wave 6) · `WDD-2026-09-24-001` (wave 7) · `WDD-2026-09-25-001` (wave 8) · `WDD-2026-09-26-001` (wave 9) · `WDD-2026-09-27-001` (wave 10) · `WDD-2026-09-28-001` (wave 11) · `WDD-2026-09-29-001` (wave 12) · `WDD-2026-10-21-001` (wave 13) · `WDD-2026-10-22-001` (wave 14) · `WDD-2026-10-23-001` (wave 15) · `WDD-2026-10-24-001` (wave 16) · `WDD-2026-10-25-001` (wave 17) · `WDD-2026-10-26-001` (wave 18)
+**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5) · `WDD-2026-09-23-001` (wave 6) · `WDD-2026-09-24-001` (wave 7) · `WDD-2026-09-25-001` (wave 8) · `WDD-2026-09-26-001` (wave 9) · `WDD-2026-09-27-001` (wave 10) · `WDD-2026-09-28-001` (wave 11) · `WDD-2026-09-29-001` (wave 12) · `WDD-2026-10-21-001` (wave 13) · `WDD-2026-10-22-001` (wave 14) · `WDD-2026-10-23-001` (wave 15) · `WDD-2026-10-24-001` (wave 16) · `WDD-2026-10-25-001` (wave 17) · `WDD-2026-10-26-001` (wave 18) · `WDD-2026-10-27-001` (wave 19)
 
 These features exist so a long-lived character still meets new spatial and risk decisions after the 22 live map modifiers and lava / ice / spikes have been seen many times. Variation comes from **rarity weights** and **relative difficulty versus same-tier content**, not from “unlocks at level N”.
 
@@ -40,7 +40,7 @@ Hard product rules this catalog must not break:
 | HP taxes | fraction of **current max HP** so a seam still matters at 1000 HP |
 | Slots per map | tile 55% · encounter 25% · event 15% · max 3 features |
 | Death Realm | no features |
-| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate, no Twilight Gate, no Ash Gate, no Hearth Gate, no Wane Gate, no Clean Gate, no Still Gate, no Tally Gate, no Mercy Bell, no Mark Gate, no Incant Gate, no Vow Gate, no Stride Gate, no Near Gate, no Ready Gate (portal-filter + run integrity) |
+| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate, no Twilight Gate, no Ash Gate, no Hearth Gate, no Wane Gate, no Clean Gate, no Still Gate, no Tally Gate, no Mercy Bell, no Mark Gate, no Incant Gate, no Vow Gate, no Stride Gate, no Near Gate, no Ready Gate, no Match Gate (portal-filter + run integrity) |
 | Live modifiers | the existing 22 still roll on their own two-roll; this catalog does not replace them |
 
 `pickWeightedFeatures` never receives player level.
@@ -3985,6 +3985,220 @@ COUNTERPLAY: End turns with an empty ring; accept the tax to hold melee; shove a
 
 ---
 
+## Wave 19 (2026-10-27)
+
+Nineteenth-wave seams so a long-lived character still meets new decisions after waves 1–18 have been seen many times. Same rarity weights and relative difficulty. Same overlay contract. Do not clone lava / ice / spikes, the live 22 modifiers, or wave-1 through wave-18 ids. Axis: remaining AP equals remaining MP — not remaining AP equals max AP (Ready), remaining AP 0 (Spent / Empty), or remaining MP 0 (Plant).
+
+### WF-HAZ-MATCH_SEAM
+
+WORLD_FEATURE_ID: WF-HAZ-MATCH_SEAM  
+NAME: Match Seam  
+MECHANIC: Balanced-slate seams. Stepping on them costs 4% of the unit’s current max HP only while remaining AP equals remaining MP. Mismatched remaining pools are free floor. Walkable. Distinct from Ready Sill / Ready Hour (remaining AP equals max AP), Spent Seam (dump-last-AP tax), Last Seam (dump-last-MP tax), Plant Font (heal at remaining MP 0), Empty Font (heal at remaining AP 0), and Even Seam (even-round free path).  
+PLAYER_DECISION: Cut through while AP and MP remaining disagree, dump one pool to match and pay, or spend MP to path around.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: common (weight 40)  
+VISUAL: Match seam, `#283038` wash, balance-scale glyph.  
+SOLVABILITY: Floor only. Never on spawn±3 or portals. Never the only cell in a corridor (does not block).  
+COMBAT_RULES: Challenge HP recorders. Wounded AI treats a matched seam step like lava. Counts toward `MAX_HAZARD_TILES` (4–8 tiles).  
+COUNTERPLAY: Cross while the two remaining pools disagree, walk around, teleport (ground/self metadata), or send a summon that is already mismatched.
+
+### WF-HAZ-MATCH_CINDER
+
+WORLD_FEATURE_ID: WF-HAZ-MATCH_CINDER  
+NAME: Match Cinder  
+MECHANIC: A single cinder orb. At round start it steps one tile toward the living unit whose remaining AP currently equals remaining MP (painted balance-chevron). Ties prefer the lowest combatant id. If nobody is matched, it sits still. Landing on a unit costs 5% max HP. Distinct from Busy Cinder (most AP spent last round), Lean Cinder (fewest remaining AP), Cast Cinder (last SpellConfig spender), Hunting Lantern (last MP spender), Hurt Cinder (lowest HP%), and Plant Picket (stands at remaining MP 0).  
+PLAYER_DECISION: Keep AP and MP remaining different so it sits or hunts a matched foe, equalize to bait it, or step off its balance-chevron.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare (weight 8)  
+VISUAL: Match cinder, `#243038` wash, balance-chevron.  
+SOLVABILITY: Never starts on spawn/portal. A floor path around the orb remains. Not a wall.  
+COMBAT_RULES: Round-start 1-tile step. Challenge HP. No AP/MP spend, no skipped turns. 1 hazard budget. Reads remaining AP and remaining MP, never a spell name.  
+COUNTERPLAY: Stay mismatched so it sits; equalize a foe and end off its balance-chevron; push/attract a matched foe onto that cell.
+
+### WF-TRP-MATCH_PLATE
+
+WORLD_FEATURE_ID: WF-TRP-MATCH_PLATE  
+NAME: Match Plate  
+MECHANIC: A visible rune plate. Stepping onto it while remaining AP does not equal remaining MP is free and leaves the plate armed. The first step onto it this map while remaining AP equals remaining MP costs 8% max HP once; then the plate becomes floor. Distinct from Glyph Plate (any enter), Chevron Plate (one painted facing), Skew Plate (diagonal enter), Spent Plate (remaining AP 0), Dash Plate (after an MP spend), and Camp Plate (end-turn).  
+PLAYER_DECISION: Step on while mismatched, dump one pool to match and spend the trap, or bait an enemy in while they are matched.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon (weight 20)  
+VISUAL: Match plate, `#203038` wash, always-visible balance rune.  
+SOLVABILITY: Walkable before and after. Never hidden. Never on spawn/portals.  
+COMBAT_RULES: One-shot step trigger while remaining AP equals remaining MP. Challenge HP. No name-based trap lookup.  
+COUNTERPLAY: Enter mismatched; send a matched summon; shove a matched foe on; ignore it.
+
+### WF-TER-MATCH_PANE
+
+WORLD_FEATURE_ID: WF-TER-MATCH_PANE  
+NAME: Match Pane  
+MECHANIC: A balanced ice sheet occupies a cell: units may walk through it, but it blocks LoS. Adjacent 1 AP (no spell) smashes it to clear floor only while remaining AP equals remaining MP before the spend. A mismatched smash is illegal and spends nothing. Distinct from Frost Pane (1 AP smash always), Brace Column (walk+LoS wall with brace/smash), Reed Screen (open LoS), Slit Wall (rotate a facing), and Hush Curtain (blocks spells).  
+PLAYER_DECISION: Equalize then spend 1 AP for LoS, hide behind the pane, or walk through and accept the blind.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Match pane, `#243848` wash, crack chips on smash.  
+SOLVABILITY: Does not block walk. Smash is optional. Never on spawn/portals.  
+COMBAT_RULES: 1 AP occupancy action, legal only while remaining AP equals remaining MP before the spend. No damage. Wall for LoS until smashed. Walk occupancy is floor.  
+COUNTERPLAY: Walk through; equalize then smash when a linear shot is worth 1 AP; stand behind it against linear spells.
+
+### WF-OBS-MATCH_SILL
+
+WORLD_FEATURE_ID: WF-OBS-MATCH_SILL  
+NAME: Match Sill  
+MECHANIC: A short-path corridor cell starts as a wall. It becomes floor for the rest of the map after the player ends a turn with remaining AP equal to remaining MP. Distinct from Ready Sill (remaining AP equals max AP), Spent Sill (remaining AP 0), Plant Font (heal at remaining MP 0), Hale Sill (≥80% HP), and Empty Step (0 AP pads).  
+PLAYER_DECISION: Equalize remaining AP and MP then end the turn to open the short path, take the long way, or wait until a round you already planned to match.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Match sill, `#203038` wash, balance pip that flips open.  
+SOLVABILITY: Place only when a second spawn→portal route already exists. Evaluate solvability as if the sill were already a wall. Never the only exit.  
+COMBAT_RULES: Wall occupancy until a player end-of-turn with remaining AP equal to remaining MP. No damage.  
+COUNTERPLAY: Take the long path; open it on a turn you already expected to match; teleport past if metadata allows.
+
+### WF-ZON-MATCH_FONT
+
+WORLD_FEATURE_ID: WF-ZON-MATCH_FONT  
+NAME: Match Font  
+MECHANIC: A balanced basin. The first unit to end a turn here this map heals 8% max HP only if remaining AP equals remaining MP; then the tile dries. Ending here mismatched does nothing and does not dry it. Enemies can drink it. Distinct from Ready Hour (remaining AP equals max AP), Empty Font (remaining AP 0), Plant Font (remaining MP 0), Pair Font (Chebyshev ≤ 1), Alone Font (no neighbor), and Shrine Pool (unconditional first drink).  
+PLAYER_DECISION: Equalize then plant on the basin for the heal, deny the enemy the basin, or ignore it.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Match font, `#1a3038` wash, rising motes, dry stone after use.  
+SOLVABILITY: Walkable. Optional. Never on spawn/portals.  
+COMBAT_RULES: Zone tick, not a spell. Player HP persist via `saveBattleStats` on the progress lock.  
+COUNTERPLAY: Step on it after equalizing; shove a drinker off; ignore when you cannot match.
+
+### WF-TEL-MATCH_STEP
+
+WORLD_FEATURE_ID: WF-TEL-MATCH_STEP  
+NAME: Match Step  
+MECHANIC: Two linked balance-cyan pads. Entering one for 1 MP exits the other only while remaining AP equals remaining MP before the spend. Otherwise the MP is not spent and you stay. If the exit is occupied, the travelers swap. Distinct from Empty Step (remaining AP 0), Spare Step (leftover AP), File Step (on-axis vs a hostile), Skew Step (sharing neither rank nor file), Plant Font (heal at remaining MP 0), and Ready Sill (remaining AP equals max AP).  
+PLAYER_DECISION: Equalize then spend 1 MP to skip, walk, or leave a pad as an enemy escape.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Paired balance-cyan pads, `#0e2a38` wash, pulse in sync.  
+SOLVABILITY: Both on floor, not on spawn/portals. The map is solvable without using them.  
+COMBAT_RULES: 1 MP from the unit’s current MP, and only while remaining AP equals remaining MP before that spend. Not a teleport spell — do not key off `effectCategory`.  
+COUNTERPLAY: Stand on the exit to force a swap; ignore the pair; stay mismatched so you cannot use it.
+
+### WF-PRT-MATCH_GATE
+
+WORLD_FEATURE_ID: WF-PRT-MATCH_GATE  
+NAME: Match Gate  
+MECHANIC: An extra sealed portal with a balance pip. It is not an exit until the player has ended a turn with remaining AP equal to remaining MP this map. Then entering rolls a random eligible overworld map and pays a hard `applyRewards` grant. It is never the only portal. Distinct from Ready Gate (remaining AP equals max AP), Spent Sill (0 AP opens a wall), Still Gate (no-fight), Hearth Gate (full HP), Empty Step (0 AP pads), Near Gate (end adjacent to a hostile), and Plant Font (heal at remaining MP 0).  
+PLAYER_DECISION: Equalize remaining AP and MP once to arm a bonus gamble exit, or take the stable portal you can already see.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic (weight 3)  
+VISUAL: Sealed portal with balance pip, `#183038` wash, pip flips open when armed.  
+SOLVABILITY: Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm. Unarmed it does not count as an exit.  
+COMBAT_RULES: Arm keys off a player end-of-turn with remaining AP equal to remaining MP. Entry is a portal transition. Bonus via `applyRewards` on the persist lock. Death-realm guards still block entry.  
+COUNTERPLAY: Ignore it. The stable exit always works.
+
+### WF-INV-MATCH_FILE
+
+WORLD_FEATURE_ID: WF-INV-MATCH_FILE  
+NAME: Match File  
+MECHANIC: Two extra same-tier elites (hard threat) share a painted file. The first (painted balance pennant) cannot spend AP until the second is dead OR the player ends a turn with remaining AP equal to remaining MP. Occupancy-walks (MP) stay legal. Victory pays hard reward multiplier. Distinct from Ready File (unlock at remaining AP equals max AP), Sheath File (second AP-locked), Mute File (SpellConfig-locked), Guard File (walk-locked), and Sleeping Vanguard (world-asleep until touch).  
+PLAYER_DECISION: Equalize remaining AP and MP so the match elite can act, burst the free spender first, or walk to a portal and leave.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Two pennants, one balance-marked, `#203038` wash.  
+SOLVABILITY: Adds enemies only up to `MAX_ENEMIES`. Skip if the roster cannot fit 2. In dungeon / boss rush they count as hostiles for map-clear.  
+COMBAT_RULES: Match lock is occupancy/turn state, not a buff spell. Blocks AP spends only. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: Leave without engaging (exploration); kill the free spender first; equalize when you want both acting.
+
+### WF-ELT-MATCH_PICKET
+
+WORLD_FEATURE_ID: WF-ELT-MATCH_PICKET  
+NAME: Match Picket  
+MECHANIC: One elite (same-tier × hard) occupies a painted post only while the player’s remaining AP equals remaining MP. Mismatch the two remaining pools and the post is empty floor (exploration: they leave, no purse). Touch to fight (hard purse). Dungeon / boss rush: they stand from map start — required for map-clear. Distinct from Ready Picket (remaining AP equals max AP), Plant Picket (remaining MP 0), High Picket (≥80% HP), Spell Picket (after a cast), Spent Sill (0 AP opens a wall), and Drift Sentinel (odd-round).  
+PLAYER_DECISION: Mismatch remaining AP and MP and walk past (exploration), equalize and fight for the hard purse, or (in a run) fight them because they already stand.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare  
+VISUAL: Stationary elite with a balance staff, `#182830` wash, post paint.  
+SOLVABILITY: Post is floor. Exit reachable without touching. Counts as 1 enemy. In a run they are present from the start.  
+COMBAT_RULES: Appearance keys off remaining AP equaling remaining MP. World contact starts a normal battle. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: In exploration, mismatch and pass; equalize when you want the purse; in a run, fight them.
+
+### WF-TRS-MATCH_CACHE
+
+WORLD_FEATURE_ID: WF-TRS-MATCH_CACHE  
+NAME: Match Cache  
+MECHANIC: A visible chest with a balance pip. 1 AP adjacent opens it only while remaining AP equals remaining MP before the spend: a medium `applyRewards` grant and no guardian. A mismatched open is illegal and spends nothing. Distinct from Round Cache (opens rounds 1–2), Late Cache (opens from round 3), Plant Cache (remaining MP 0), Empty Font (heal at remaining AP 0), Trip Cache (open before any MP this map), and Patience Cache (wait-or-open).  
+PLAYER_DECISION: Equalize then spend 1 AP to open, wait and stay mismatched, or walk past.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Locked chest, `#283038` wash, balance pip, gold trim.  
+SOLVABILITY: Adjacent-open, not a wall. Optional.  
+COMBAT_RULES: AP cost, not a spell. Legal only while remaining AP equals remaining MP before that 1 AP. Credits via persist-lock `applyRewards`.  
+COUNTERPLAY: Skip the chest; equalize when you can spare 1 AP; ignore it while mismatched.
+
+### WF-SPL-MATCH_TUTOR
+
+WORLD_FEATURE_ID: WF-SPL-MATCH_TUTOR  
+NAME: Match Tutor  
+MECHANIC: One same-tier enemy (medium threat) carries 1 extra `usableByEnemy` spell. If the player ends a turn with remaining AP equal to remaining MP while they still live (any distance), the player gains that spell id as a single remaining cast this map. Killing them before that match teach grants the purse but not the one-cast. They stay hostile after the teach. Distinct from Ready Tutor (remaining AP equals max AP), Plant Tutor (remaining MP 0), Close Tutor (end turn adjacent), Live Tutor (repeating loan while they live), Empty Font (heal at remaining AP 0), and Steel Hour (skip paid-AP spells for a purse).  
+PLAYER_DECISION: Equalize remaining AP and MP and end a turn for a one-shot, burst-kill for the purse, or ignore them.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Enemy with a hovering balance-orb, `#183038` wash.  
+SOLVABILITY: Prefer replacing one existing spawn; else +1 if under the enemy cap. Must stay reachable. In dungeon / boss rush they count as hostiles for map-clear.  
+COMBAT_RULES: Metadata only (`usableByEnemy`, `targetType`, costs). One-cast does not call `upgradeSpell` and does not persist `spellLevel*` arrays.  
+COUNTERPLAY: Kite and ignore; equalize for the teach then leave; burst-kill if you want the purse more than the cast.
+
+### WF-RSK-MATCH_OATH
+
+WORLD_FEATURE_ID: WF-RSK-MATCH_OATH  
+NAME: Match Oath  
+MECHANIC: A balanced inlay. Voluntarily ending a turn on it flags this map. If the next `applyRewards` happens while remaining AP equals remaining MP, that credit uses the hard multiplier. If the two remaining pools disagree at credit, the flag pays nothing extra. Snapshot at credit. Distinct from Ready Hour (ended remaining AP equals max AP at least once), Spent Oath (cash out at remaining AP 0), Plant Oath (cash out at remaining MP 0), Spare Oath (leftover AP), and Pair Oath (Chebyshev ≤ 1 at credit).  
+PLAYER_DECISION: Flag a fight you will cash out with remaining AP equal to remaining MP, or stay unflagged and finish mismatched.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Balanced inlay, `#1a2830` wash, slow cyan tick.  
+SOLVABILITY: Optional floor tile. Map is solvable if never used.  
+COMBAT_RULES: Match check is remaining AP equals remaining MP at the `applyRewards` enqueue. Multiplier on the next `applyRewards` enqueue only. Death still uses `saveBattleStats`.  
+COUNTERPLAY: Skip it. Use it only when you expect to stand matched at credit, or dump one pool if you need to void the flag.
+
+### WF-MOD-MATCH_CAST
+
+WORLD_FEATURE_ID: WF-MOD-MATCH_CAST  
+NAME: Match Cast  
+MECHANIC: This map only: a combatant may spend a `SpellConfig` only while remaining AP equals remaining MP before that spend. A mismatched `SpellConfig` spend is illegal. Attack Nearest, summons, occupancy-walks, and 0-spell turns are unchanged. Distinct from Once Cast (at most one SpellConfig per turn), Walk Lock (after a walk, no casts), Cast Lock (after a spell, no walks), Short Fuse (cooldown spells locked round 1), Tight Grip (0-MP spells cost 1), and Heavy Incant (high-AP spells cost MP).  
+PLAYER_DECISION: Dump AP or MP until the remaining pools match then cast, Attack Nearest while mismatched, summon a second caster, or skip the fight.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Match-cast overlay, `#203038` wash, balance pip on spells.  
+SOLVABILITY: No tile change. Attack Nearest, summons, occupancy-walks, and matched-cast turns remain usable.  
+COMBAT_RULES: Reads remaining AP equals remaining MP before each `SpellConfig` spend. Attack Nearest is not a spell. No damage rewrite.  
+COUNTERPLAY: Equalize then cast; Attack Nearest while mismatched; summon a caster; refuse the fight.
+
+### WF-EVT-MATCH_HOUR
+
+WORLD_FEATURE_ID: WF-EVT-MATCH_HOUR  
+NAME: Match Hour  
+MECHANIC: This map only: if the player ended at least one turn with remaining AP equal to remaining MP, the next `applyRewards` uses the hard multiplier. Always ending mismatched leaves rewards unchanged. Distinct from Ready Hour (remaining AP equals max AP), Spent Oath (cash out at remaining AP 0), Plant Oath (cash out at remaining MP 0), Vacant Hour (skip summons), and Match Gate (arm an extra portal).  
+PLAYER_DECISION: Equalize remaining AP and MP on at least one end-turn for a hard purse, or stay mismatched every turn and accept normal rewards.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Match-hour overlay, `#182830` wash, balance ring.  
+SOLVABILITY: No blocks. Leaving is always legal.  
+COMBAT_RULES: Match means remaining AP equals remaining MP at player end-of-turn. Multipliers on persist-lock `applyRewards` only. Does not rewrite `combatMath`.  
+COUNTERPLAY: Equalize once then spend freely; ignore the overlay and stay mismatched; leave without fighting.
+
+### WF-ENV-MATCH_DRAFT
+
+WORLD_FEATURE_ID: WF-ENV-MATCH_DRAFT  
+NAME: Match Draft  
+MECHANIC: At the end of each combatant turn, if remaining AP equals remaining MP they pay 3% max HP. Ending the turn mismatched is shelter. Distinct from Spare Draft (dump leftover AP or pay), Stride Draft (dump leftover MP or pay), Isolation Chill (tax when nobody is within 3), Pair Draft (tax when Chebyshev ≤ 1), Ready Hour (remaining AP equals max AP), and Empty Font (heal at remaining AP 0).  
+PLAYER_DECISION: End turns mismatched, equalize and pay, or shove a foe so they end matched.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: uncommon  
+VISUAL: Match-draft wash `#242830`, balance-rings.  
+SOLVABILITY: Does not add walls. Tax is not a wall.  
+COMBAT_RULES: End-of-turn challenge HP. Match check is remaining AP equals remaining MP. Summons pay it. No skipped turns.  
+COUNTERPLAY: End turns mismatched; accept the tax to hold a matched kit; shove a foe after they have already acted.
+
+---
+
 ## Composition examples (same level, different maps)
 
 1. Ember Vein + Banner Patrol + Crosswind — path taxes, a moving elite, slides that can dump you onto the seam.  
@@ -4076,10 +4290,15 @@ COUNTERPLAY: End turns with an empty ring; accept the tax to hold melee; shove a
 87. Busy Cinder + Pair Font + Pair Draft — bait the busiest hunter, drink next to a body, end alone or pay.  
 88. Ready Sill + Skew Step — skip AP to open the short path vs 1 MP off-axis skip.  
 89. Ready File + Pair Oath — skip AP so the ready elite can act, then cash out next to a body.  
-90. Round Cache + Ready Hour — open in the first two rounds, then skip AP once for a hard purse.
+90. Round Cache + Ready Hour — open in the first two rounds, then skip AP once for a hard purse.  
+91. Match Seam + Match Picket + Match Cast — matched-step tax, mismatch to skip an elite, equalize to spend a SpellConfig.  
+92. Match Cinder + Match Font + Match Draft — bait a matched hunter, drink equalized, end mismatched or pay.  
+93. Match Sill + Match Step — equalize to open the short path vs 1 MP matched skip.  
+94. Match File + Match Oath — equalize so the match elite can act, then cash out matched.  
+95. Match Cache + Match Hour — equalize then open, then end matched once for a hard purse.
 
 None of these require a higher character level. The warband is scarier because it is a larger same-tier pack, not because it is “level 40 content”.
 
 ## Implementation gate
 
-Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, **WDD-2026-09-22-001**, **WDD-2026-09-23-001**, **WDD-2026-09-24-001**, **WDD-2026-09-25-001**, **WDD-2026-09-26-001**, **WDD-2026-09-27-001**, **WDD-2026-09-28-001**, **WDD-2026-09-29-001**, **WDD-2026-10-21-001**, **WDD-2026-10-22-001**, **WDD-2026-10-23-001**, **WDD-2026-10-24-001**, **WDD-2026-10-25-001**, or **WDD-2026-10-26-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
+Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, **WDD-2026-09-22-001**, **WDD-2026-09-23-001**, **WDD-2026-09-24-001**, **WDD-2026-09-25-001**, **WDD-2026-09-26-001**, **WDD-2026-09-27-001**, **WDD-2026-09-28-001**, **WDD-2026-09-29-001**, **WDD-2026-10-21-001**, **WDD-2026-10-22-001**, **WDD-2026-10-23-001**, **WDD-2026-10-24-001**, **WDD-2026-10-25-001**, **WDD-2026-10-26-001**, or **WDD-2026-10-27-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
