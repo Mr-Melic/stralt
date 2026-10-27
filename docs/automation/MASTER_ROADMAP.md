@@ -19,7 +19,7 @@ This file is the living prioritized roadmap. ACTION_ID records for this run live
 | Unmerged 2026-10-26 specialist PRs | Full day `#1108`–`#1162` (**55** drafts). TBC `#1108` WAITING (fifteenth inspection of `0f5363f`; 0 collectors). Wave 18 catalogs `#1112/#1114/#1132/#1134/#1135/#1138/#1139/#1143`. WX extract `#1109`. Soak/tax `#1136/#1142`. Admin `#1115`. |
 | Open ACTION_IDs | Reuse. Director index = this file + `ACTION_IDS_2026-10-27.md`. |
 | Recent commits | `git log` since 2026-09-03: **none** on `origin/main`. Last merge `#332`. |
-| Open drafts | GraphQL **831** at first search (`is:open`). 10-26 flock opened **55** (`#1108`–`#1162`). This hour already `#1163`–`#1164` (enemy/boss admin re-audit; Enthroned Void kit-first Swap test mill). |
+| Open drafts | GraphQL **831** at first search; **844** by stack-compat list (`is:open`). 10-26 flock opened **55** (`#1108`–`#1162`). This hour already `#1163`–`#1175` (admin re-audit, Enthroned Void test mill, TBC `#1165`, pack-enemy `#1166`, advertised Chaos `#1168`, map snap `#1174`, Wave 20 boss `#1170`). |
 | Player telemetry | **Still none.** `longHorizonSim.telemetry.available === false`. No `recordTelemetry` / sidecar in `src/`. TBC stays `WAITING_FOR_TELEMETRY`. |
 | Same-hour flock | **52** automations this hour: **47 RUNNING**, **5 IDLE**, **0 ERROR**. Map guardian, AI, combat-parity, complexity, spell mechanics, spell discovery, boss, dungeon, expansion, critical hunter `1aa41c6c`, persist auditor, world-content, invariants, security, TBC, telemetry dashboard, admin implementer are RUNNING. Approved Design, docs sync, contract guardian, and two admin-audit UUIDs are **enabled** but IDLE in the first complete snapshot. |
 | Weekly quality audit `#1106` | ENGINEERING corroboration from the prior week: 436 automation runs, 292 drafts, 0 merges, 0 closes. Classifies map/persist/combat/#62 paint as NEGATIVE_ROI. Agrees halt + do-not-merge-burst. No newer weekly audit on 10-26. |
@@ -52,7 +52,7 @@ Telemetry is not allowed to set priority. Correlation is not causation. No CLEAR
 | Caffeine 20260901 deploy | Unconfirmed; `.old` Aug-31 no-GameKey | Unchanged. Grep GameKey in `.old` = 0. Newest deployed snapshot still `pr259-tail-20260901.most` |
 | Reward-trust ADR | Missing | Still 0 `docs/**/*ADR*` |
 | Telemetry collectors | 0 | 0. TBC `#1108` correctly WAITING (fifteenth inspection). Tonight’s TBC is RUNNING (sixteenth incoming) |
-| 10-27 flock | n/a | **47 RUNNING** + 5 IDLE. **0 ERROR.** Same implementer UUIDs still **enabled**. First drafts `#1163`/`#1164` already open |
+| 10-27 flock | n/a | **47 RUNNING** + 5 IDLE. **0 ERROR.** Same implementer UUIDs still **enabled**. First-hour drafts `#1163`–`#1175` already open (docs + pack-enemy + advertised combat + map snap) |
 | Skip-wipe mill | 93 titled skip remount | **~100**. 10-26 added leftover-Doka wipe twins `#1129/#1145/#1147/#1149/#1151/#1153/#1157` |
 | Advertised / pack-enemy mill | 25 pack-enemy combat | Grew. 10-26 added `#1123/#1148/#1150/#1155/#1158/#1160` |
 | Soak mill | `#1079/#1084/#1097/#1100` | Plus **`#1136`** (controlled-summon walk tax) and **`#1142`** (Plague Zone tick) |
@@ -73,7 +73,7 @@ Telemetry is not allowed to set priority. Correlation is not causation. No CLEAR
 4. Soak-like-`playerTakesDamage` mill grew (`#1136/#1142`). After halt: one soak/landing helper, not a seventh effect. Related to MIMA-001 `applyHazardLanding`, not a third persist rewrite.
 5. Pack-enemy / advertised-execute mill grew again (`#1123/#1148/#1150/#1155/#1158/#1160`). One `resolveKitExecute` helper after halt (MTD-2026-10-22-005).
 6. 10-26 touched the freeze file again: `#1109` portal-cube extract from WX. Hold it with `#831/#842/#901/#961/#995/#1076`. Quality audit `#1106` still scores the paint-extract strategy as NEGATIVE_ROI / FAKE MODULARITY.
-7. 10-27 first minutes already opened `#1163` (admin re-audit) and `#1164` (Enthroned Void test mill). Combined recovered mill without dashboard disable is now the **steady state**, including the first minutes of day seven.
+7. 10-27 first minutes already opened `#1163`–`#1175`: admin re-audit, Enthroned Void test mill, TBC `#1165` (sixteenth WAITING clone), pack-enemy `#1166`, advertised Chaos `#1168`, persist test `#1171`, map snap `#1174`, Wave 20 boss `#1170`. Combined recovered mill without dashboard disable is now the **steady state**, including the first minutes of day seven. Queue **831 → 844** while this ledger was written.
 8. `#1124` did not land. Oldest-first still blocks the living index (MTD-2026-09-25-005). Close list now includes `#1124`.
 
 ---
@@ -213,7 +213,7 @@ HP/death extraction (MTD-003) is still valid. Do not start it in the same hour a
 | — | Skip-wipe / pack-enemy / soak / map snap / WX extract / Pale Archivist / Enthroned Void test mills | **HOLD.** Close twins after one helper each. |
 | — | `#1108` and later TBC WAITING clones | Keep `#333`; close twins. |
 | — | `#1106` | Quality audit agrees halt. Do not merge its ledger ahead of this index. |
-| — | Tonight’s `#1163`/`#1164` and the rest of the 10-27 wave | Default **HOLD**. |
+| — | Tonight’s `#1163`–`#1175` and the rest of the 10-27 wave | Default **HOLD**. |
 
 Do not restack death-replay, `writeLiveDoka`, `writeLevel`, leftover-XP HUD, recap click-through, GameKey product code, Frozen execute MP, challenge HUD, or Enemy Register lore.
 
@@ -279,7 +279,7 @@ Do not let P2/P3 expansion PRs from the leftover queue, the 10-21…10-26 mills,
 
 ## TOP 5 CURRENT PRIORITIES
 
-1. **Halt the 10-27 00:00 implementer flock and the 06/12/18 cadences.** 52 automations (47 RUNNING). First drafts `#1163`/`#1164` already exist. Especially hold mapGen, persist, targeting, `enemyAI`, AdminDashboard, `main.mo` stables, telemetry UI, soak, skip-wipe, pack-enemy, WX extracts.
+1. **Halt the 10-27 00:00 implementer flock and the 06/12/18 cadences.** 52 automations (47 RUNNING). First-hour drafts `#1163`–`#1175` already exist (including pack-enemy `#1166`, advertised Chaos `#1168`, map snap `#1174`). Especially hold mapGen, persist, targeting, `enemyAI`, AdminDashboard, `main.mo` stables, telemetry UI, soak, skip-wipe, pack-enemy, WX extracts.
 2. **Do not merge-burst the 831+ leftover drafts.** Six recovered days opened 349 PRs. Close superseded director snapshots; restack #327 only.
 3. **Confirm Caffeine 20260901 GameKey deploy and refresh `.old`.** Source is correct; live previous-version signature is still Aug-31 no-GameKey.
 4. **Write the reward-trust ADR (AQA-008).** Clamps landed; the written decision did not. Security is running again tonight.
