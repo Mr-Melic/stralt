@@ -6,31 +6,79 @@
  */
 
 import {
+  ENEMY_REACHABLE_STEP_BUDGET,
   ENEMY_SUMMONER_CHANCE_BASE,
   ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE,
+  ENEMY_SUMMON_CAP,
+  MAP_MODIFIER_ARCANE_OVERFLOW_AP_DISCOUNT,
+  MAP_MODIFIER_ARCANE_SURGE_AP_DISCOUNT,
+  MAP_MODIFIER_DOKA_FEVER_ENEMY_HP_BONUS,
+  MAP_MODIFIER_DOKA_FEVER_REWARD_MULTIPLIER,
+  MAP_MODIFIER_GLASS_REALM_DAMAGE_MULTIPLIER,
+  MAP_MODIFIER_IRON_CURSE_RES_BONUS,
+  MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT,
+  MAP_MODIFIER_NORMAL_TIMER,
+  MAP_MODIFIER_PAPER_WINDSTORM_RANGE_REDUCTION,
+  MAP_MODIFIER_SWIFT_WINDS_MP_BONUS,
+  MAP_MODIFIER_THORN_DAMAGE_PER_TILE,
+  MAP_MODIFIER_THORN_THRESHOLD,
+  MAP_MODIFIER_TIME_WARP_TIMER,
+  MAP_MODIFIER_TITANS_VIGOR_HP_BONUS,
+  MAP_MODIFIER_TITANS_VIGOR_MAX_MULTIPLIER,
+  MAP_MODIFIER_TITANS_VIGOR_MIN_MULTIPLIER,
+  MAP_MODIFIER_VAMPIRIC_GROUND_LIFESTEAL_PERCENT,
+  MAX_ENEMIES,
   PLAYER_BASE_AP,
   PLAYER_BASE_MP,
+  SUMMON_BASE_HP,
+  SUMMON_BASE_HP_DEFAULT,
+  WORLD_GRID_SIZE,
 } from "../data/gameConstants.ts";
 import { starterSpells } from "../data/spellData.ts";
 import {
+  playerTurnStartModifierTarget,
+  thornedGroundWalkDamage,
+} from "../engine/battleSetup.ts";
+import {
+  calcScaledDamage,
   computeAITier,
   pickEnemyLevelFromTiers,
 } from "../engine/combatMath.ts";
-import { dungeonDokaMultiplierFor } from "../engine/portalRules.ts";
+import { enemyWalkCostPerTile } from "../engine/enemyWalkMp.ts";
+import {
+  dungeonChainCompletionBonus,
+  dungeonDokaMultiplierFor,
+} from "../engine/portalRules.ts";
 import {
   BOSS_LEVEL_DIFF_STEP,
   getBossEffectiveStats,
   getEnemyBaseStats,
   getPlayerBaseStats,
+  getSummonBaseStats,
 } from "../engine/progression.ts";
+import {
+  DUNGEON_SPAWN_DEPTH_CAP,
+  FAMILY_STAT_MULTS,
+  FAMILY_TYPES,
+  FAMILY_VARIANT_CHANCE,
+  dungeonScaledEnemyLevel,
+  dungeonSpawnExtras,
+} from "../engine/spawnPolicy.ts";
+import { EXISTING_MAP_MODIFIER_IDS } from "../engine/worldFeatures.ts";
 import type { ChessPieceType } from "../types/gameTypes.ts";
 import { DEFAULT_LEVELUP_CONFIG } from "../types/gameTypes.ts";
-import { MAX_DOKA_GRANT } from "./adminSafety.ts";
+import {
+  MAX_DOKA_GRANT,
+  MAX_PERSISTED_AP,
+  maxPersistedAp,
+} from "./adminSafety.ts";
 import {
   APPLY_REWARDS_MAX_DOKA_DELTA,
   APPLY_REWARDS_MAX_XP_DELTA,
   clampApplyRewardsDeltas,
 } from "./applyRewardsResult.ts";
+import { DEATH_DOKA_PENALTY_RATE } from "./deathPenalty.ts";
+import { startingChampionStats } from "./startingChampionStats.ts";
 import { applyXpDelta, xpForNextLevel, xpThresholdBigInt } from "./xpCurve.ts";
 
 /** Mirrors rewardResolver.computeVictoryExp — kept local so Node can run this file. */
@@ -78,11 +126,14 @@ function buildEnemyKit(
   return (kits[pieceType] ?? kits.pawn)(z);
 }
 
-/** Requested horizon plus HUD-sat, AP-cap, IEEE, post-cap, and 10k/50k stress. */
+/** Requested horizon plus HUD-sat, AP-cap, IEEE, post-cap, and 10k/50k/100k stress. */
 export const STRESS_LEVELS = [
   1, 10, 15, 25, 48, 50, 78, 100, 250, 325, 500, 1000, 2500, 5000, 1018, 1019,
-  10_000, 50_000,
+  10_000, 50_000, 100_000,
 ] as const;
+
+/** Create-time INIT. saveBattleStats cannot raise it. */
+export const PLAYER_CREATE_INIT = Number(startingChampionStats().init);
 
 const GROWTH = (DEFAULT_LEVELUP_CONFIG.statGrowthPercent ?? 5) / 100;
 const AP_EVERY = DEFAULT_LEVELUP_CONFIG.apMpGrowthEveryNLevels ?? 25;
@@ -296,11 +347,1568 @@ export function firstLevelSrCanHit100(piece: ChessPieceType): number | null {
   return null;
 }
 
+export function firstLevelChcCanHit100(piece: ChessPieceType): number | null {
+  for (let level = 1; level <= 400; level++) {
+    if (enemyStatBounds(level, piece).chc.max >= 100) return level;
+  }
+  return null;
+}
+
+export function firstLevelFormulaApExceedsPersistCap(
+  persistCap = MAX_PERSISTED_AP,
+  every = AP_EVERY,
+): number | null {
+  for (let level = 1; level <= 2000; level++) {
+    if (formulaAp(level) > maxPersistedAp(level, every)) return level;
+    if (formulaAp(level) > persistCap) return level;
+  }
+  return null;
+}
+
+/**
+ * Share of 3-enemy packs where the frozen create-time player INIT is strictly
+ * higher than every enemy INIT (player wins the sort `b.init - a.init`).
+ */
+export function monteCarloPlayerWinsInitiative(
+  playerLevel: number,
+  playerInit = PLAYER_CREATE_INIT,
+  enemiesPerFight = 3,
+  samples = 4000,
+): number {
+  let wins = 0;
+  for (let i = 0; i < samples; i++) {
+    let playerFirst = true;
+    for (let e = 0; e < enemiesPerFight; e++) {
+      const lvl = pickEnemyLevelFromTiers(playerLevel);
+      const piece = PIECES[e % PIECES.length];
+      const stats = getEnemyBaseStats(lvl, piece, i * 31 + e * 17 + lvl);
+      if (stats.init >= playerInit) {
+        playerFirst = false;
+        break;
+      }
+    }
+    if (playerFirst) wins += 1;
+  }
+  return wins / samples;
+}
+
 export function kitForZoneInput(
   piece: ChessPieceType,
   zone: unknown,
 ): string[] {
   return buildEnemyKit(piece, zone as number);
+}
+
+/** Create-time RES. saveBattleStats cannot raise it (`_minNat` vs stored). */
+export const PLAYER_CREATE_RES = Number(startingChampionStats().res);
+
+/** Live fallback melee pool (`WorldExploration.tsx` Crush 12 / Fire Bolt 8). */
+export const FALLBACK_CRUSH_BASE = 12;
+export const FALLBACK_FIREBOLT_BASE = 8;
+
+/**
+ * Catalog kit damages. `calcScaledDamage` ignores caster level, so these
+ * stay flat while Crush scales `base * max(1, L/5)`. Inferno / Poison /
+ * Venom are `damage: 0` and `pickBestDamageSpell` skips them.
+ */
+export const KIT_STRIKE_DAMAGE = 10;
+export const KIT_FROST_DAMAGE = 20;
+export const KIT_INFERNO_DIRECT_DAMAGE = 0;
+export const PASSIVE_REGEN_INTERVAL_MS = 10_000;
+
+/** Enemy kit cast raw. Mirrors WX `calcScaledDamage(spellDmg, enemy.level, 0)`. */
+export function kitCastRaw(baseDamage: number, enrage = 1): number {
+  return Math.max(1, Math.round(calcScaledDamage(baseDamage, 1, 0) * enrage));
+}
+
+export function crushOverKitRatio(enemyLevel: number, kitBase: number): number {
+  const kit = kitCastRaw(kitBase);
+  if (kit <= 0) return Number.POSITIVE_INFINITY;
+  return fallbackCrushRaw(enemyLevel) / kit;
+}
+
+/** First enemy level whose Crush raw strictly exceeds the flat kit spell. */
+export function firstEnemyLevelCrushExceedsKit(kitBase: number): number | null {
+  const kit = kitCastRaw(kitBase);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (fallbackCrushRaw(enemyLevel) > kit) return enemyLevel;
+  }
+  return null;
+}
+
+/** Out-of-battle +1 HP / 10s (`WorldExploration.tsx` 3618–3625). */
+export function passiveRegenSecondsToFull(level: number): number {
+  return linearPlayerMaxHp(level) * (PASSIVE_REGEN_INTERVAL_MS / 1000);
+}
+
+/** Fallback Crush raw before RES. Mirrors WorldExploration fallback melee. */
+export function fallbackCrushRaw(enemyLevel: number): number {
+  return Math.max(
+    1,
+    Math.round(FALLBACK_CRUSH_BASE * Math.max(1, enemyLevel / 5)),
+  );
+}
+
+export function fallbackFireboltRaw(enemyLevel: number): number {
+  return Math.max(
+    1,
+    Math.round(FALLBACK_FIREBOLT_BASE * Math.max(1, enemyLevel / 5)),
+  );
+}
+
+/**
+ * Fallback melee applies RES once, then `playerTakesDamage` applies RES
+ * again — two 10% cuts on create RES.
+ */
+export function damageAfterPlayerResPasses(
+  raw: number,
+  res = PLAYER_CREATE_RES,
+  passes = 2,
+): number {
+  let dmg = raw;
+  const factor = Math.max(0, 1 - res / 100);
+  for (let i = 0; i < passes; i++) {
+    dmg = Math.max(1, Math.round(dmg * factor));
+  }
+  return dmg;
+}
+
+/** First enemy level whose Crush fallback one-shots linear player max HP. */
+export function firstEnemyLevelFallbackCrushOneShots(
+  playerLevel: number,
+  resPasses = 2,
+): number | null {
+  const hp = linearPlayerMaxHp(playerLevel);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    const recv = damageAfterPlayerResPasses(
+      fallbackCrushRaw(enemyLevel),
+      PLAYER_CREATE_RES,
+      resPasses,
+    );
+    if (recv >= hp) return enemyLevel;
+  }
+  return null;
+}
+
+/**
+ * Betrayal-kill enrage (`WorldExploration.tsx` 16257, 15638–15646):
+ * Crush raw ×6 and betrayer HP ×6.
+ */
+export const BETRAYAL_ENRAGE_MULT = 6;
+
+export function fallbackCrushRawEnraged(enemyLevel: number): number {
+  return fallbackCrushRaw(enemyLevel) * BETRAYAL_ENRAGE_MULT;
+}
+
+export function firstEnemyLevelEnragedCrushOneShots(
+  playerLevel: number,
+  resPasses = 2,
+): number | null {
+  const hp = linearPlayerMaxHp(playerLevel);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    const recv = damageAfterPlayerResPasses(
+      fallbackCrushRawEnraged(enemyLevel),
+      PLAYER_CREATE_RES,
+      resPasses,
+    );
+    if (recv >= hp) return enemyLevel;
+  }
+  return null;
+}
+
+/** First player level whose linear max HP strictly exceeds Crush recv. */
+export function firstPlayerLevelSurvivesCrushRecv(recv: number): number | null {
+  const need = Math.max(1, Math.floor(Number(recv) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (linearPlayerMaxHp(level) > need) return level;
+  }
+  return null;
+}
+
+/** Shield Charm absorb (`WorldExploration.tsx` 3583–3585). */
+export const SHIELD_CHARM_ABSORB = 20;
+/** BuffShop `health_potion` / `greater_health_potion` Doka costs. */
+export const HEALTH_POTION_COST = 50;
+export const GREATER_POTION_COST = 120;
+export const HEALTH_POTION_HP_FRAC = 0.3;
+export const GREATER_POTION_HP_FRAC = 0.7;
+
+/** First enemy level whose Crush recv (two RES passes) exceeds Shield Charm. */
+export function firstEnemyLevelCrushExceedsShield(
+  absorb = SHIELD_CHARM_ABSORB,
+): number | null {
+  const cap = Math.max(0, Math.floor(Number(absorb) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (damageAfterPlayerResPasses(fallbackCrushRaw(enemyLevel)) > cap) {
+      return enemyLevel;
+    }
+  }
+  return null;
+}
+
+export function healthPotionHpRestored(level: number): number {
+  return Math.floor(linearPlayerMaxHp(level) * HEALTH_POTION_HP_FRAC);
+}
+
+export function greaterPotionHpRestored(level: number): number {
+  return Math.floor(linearPlayerMaxHp(level) * GREATER_POTION_HP_FRAC);
+}
+
+/** Doka spent per HP restored by a 50-Doka health potion. */
+export function healthPotionDokaPerHp(level: number): number {
+  const hp = healthPotionHpRestored(level);
+  if (hp <= 0) return Number.POSITIVE_INFINITY;
+  return HEALTH_POTION_COST / hp;
+}
+
+export function deathDokaLost(doka: number): number {
+  return Math.floor(
+    Math.max(0, Math.floor(Number(doka) || 0)) * DEATH_DOKA_PENALTY_RATE,
+  );
+}
+
+export const SUMMON_HUNTER_HP = SUMMON_BASE_HP.hunter ?? SUMMON_BASE_HP_DEFAULT;
+export const SUMMON_GUARDIAN_HP = SUMMON_BASE_HP.guardian ?? 120;
+export const SUMMON_BOMBER_HP = SUMMON_BASE_HP.bomber ?? 50;
+
+/**
+ * Fallback vs a summon applies RES once (`WorldExploration.tsx` 16722–16728),
+ * not the player double-pass. Summon `res` defaults to 0.
+ */
+export function fallbackCrushVsSummon(
+  enemyLevel: number,
+  summonRes = 0,
+): number {
+  return damageAfterPlayerResPasses(fallbackCrushRaw(enemyLevel), summonRes, 1);
+}
+
+/** Create SP. saveBattleStats cannot raise it. Live Frost then `floor(scaled * (1+SP/100))`. */
+export const PLAYER_CREATE_SP = Number(startingChampionStats().sp);
+/** Catalog Frost Bolt AP (`spellData.ts` starter-frost). */
+export const FROST_AP_COST = 3;
+export const PLAYER_FROST_BASE = KIT_FROST_DAMAGE;
+
+/**
+ * Player Frost raw after upgrade +3%/spell-level and create SP.
+ * `calcScaledDamage` still ignores character level (`combatMath.ts` 130–137).
+ * Mirrors WorldExploration `computeDamage` (`3308–3322`) with no mark/crit/RES.
+ */
+export function playerFrostRaw(
+  spellUpgradeLevel = 0,
+  sp = PLAYER_CREATE_SP,
+): number {
+  const scaled = calcScaledDamage(
+    PLAYER_FROST_BASE,
+    1,
+    Math.max(0, Math.floor(Number(spellUpgradeLevel) || 0)),
+  );
+  return Math.max(1, Math.floor(scaled * (1 + Math.max(0, sp) / 100)));
+}
+
+export function playerFrostCastsPerTurn(ap: number): number {
+  return Math.max(0, Math.floor(Math.max(0, ap) / FROST_AP_COST));
+}
+
+export function playerFrostDamagePerTurn(
+  playerLevel: number,
+  spellUpgradeLevel = 0,
+  ap = formulaAp(playerLevel),
+): number {
+  return playerFrostRaw(spellUpgradeLevel) * playerFrostCastsPerTurn(ap);
+}
+
+/** Optimistic TTK (no enemy RES/SR). Live rook RES 100 is chip-1 (004). */
+export function playerFrostTurnsToKill(
+  enemyLevel: number,
+  playerLevel: number,
+  spellUpgradeLevel = 0,
+  ap = formulaAp(playerLevel),
+): number {
+  const dpt = playerFrostDamagePerTurn(playerLevel, spellUpgradeLevel, ap);
+  if (dpt <= 0) return Number.POSITIVE_INFINITY;
+  return Math.ceil(linearEnemyMaxHp(enemyLevel) / dpt);
+}
+
+export function firstEnemyLevelFrostTurnsAtLeast(
+  minTurns: number,
+  playerLevel: number,
+  spellUpgradeLevel = 0,
+  ap = formulaAp(playerLevel),
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minTurns) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (
+      playerFrostTurnsToKill(enemyLevel, playerLevel, spellUpgradeLevel, ap) >=
+      need
+    ) {
+      return enemyLevel;
+    }
+  }
+  return null;
+}
+
+/** Catalog `hpScale` from `spellData.ts` summonUnitDef. */
+export const SUMMON_HUNTER_HP_SCALE = 1.0;
+export const SUMMON_GUARDIAN_HP_SCALE = 1.5;
+export const SUMMON_ARCHER_HP_SCALE = 0.7;
+export const SUMMON_BOMBER_HP_SCALE = 0.5;
+export const SUMMON_WISP_HP_SCALE = 0.6;
+
+export function catalogSummonMaxHp(
+  summonAI: string,
+  hpScale: number,
+  spellLevel = 0,
+): number {
+  return getSummonBaseStats(
+    spellLevel,
+    { pieceType: "pawn", level: 1, hpScale },
+    summonAI,
+  ).maxHp;
+}
+
+export function firstEnemyLevelCrushOneShotsSummonHp(
+  summonHp: number,
+  summonRes = 0,
+): number | null {
+  const hp = Math.max(1, Math.floor(Number(summonHp) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (fallbackCrushVsSummon(enemyLevel, summonRes) >= hp) return enemyLevel;
+  }
+  return null;
+}
+
+/** Shrine altar persist (`WorldExploration.tsx` 11308) is a flat 300. */
+export const SHRINE_DOKA = 300;
+/** `dokaSpawnBaseValue` default (`gameTypes.ts` DEFAULT_GAME_CONFIG). */
+export const GROUND_DOKA_SPAWN_BASE = 5;
+/** Ground coin `spawnBase + avgLevel * 2` before the 0.8–1.2 jitter. */
+export const GROUND_DOKA_PER_ENEMY_LEVEL = 2;
+
+export function groundDokaMean(
+  enemyLevel: number,
+  spawnBase = GROUND_DOKA_SPAWN_BASE,
+): number {
+  return (
+    Math.max(1, spawnBase) +
+    Math.max(1, enemyLevel) * GROUND_DOKA_PER_ENEMY_LEVEL
+  );
+}
+
+export function firstEnemyLevelGroundDokaExceedsShrine(
+  shrine = SHRINE_DOKA,
+  spawnBase = GROUND_DOKA_SPAWN_BASE,
+): number | null {
+  const cap = Math.max(0, Math.floor(Number(shrine) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (groundDokaMean(enemyLevel, spawnBase) > cap) return enemyLevel;
+  }
+  return null;
+}
+
+/**
+ * Boss Rush spawn (`WorldExploration.tsx` 5330): `level: player + 2`.
+ * Overworld `pickEnemyLevelFromTiers` caps `maxTier = floor(999/tierSize)`.
+ * Rush does not.
+ */
+export const BOSS_RUSH_LEVEL_OFFSET = 2;
+/** Pale Archbishop sample `baseStats.hp` (`bossDefaults.ts`). */
+export const CATALOG_BOSS_HP_SAMPLE = 350;
+/** Highest overworld roll: last tier 99 is 991–1000, +variance/dungeon boost. */
+export const OVERWORLD_ENEMY_LEVEL_CAP = 1020;
+/** Room-clear Doka (`WorldExploration.tsx` 12749–12753). Catalog `dokaReward` is unused. */
+export const BOSS_RUSH_DOKA_PER_LEVEL = 1.5;
+export const BOSS_RUSH_DOKA_MIN = 5;
+/** Room 0 catalog `dokaReward` (`useBossRush.ts`). Persist ignores it. */
+export const BOSS_RUSH_ROOM0_CATALOG_DOKA = 500;
+/** Jackpot room 9 catalog `dokaReward`. */
+export const BOSS_RUSH_ROOM9_CATALOG_DOKA = 5000;
+/** 4-dir BFS (`getMpReachableTiles`). (8,8) to a corner on a 16-grid. */
+export const BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN = WORLD_GRID_SIZE;
+/** Opposite-corner Manhattan on `WORLD_GRID_SIZE`. */
+export const BATTLE_GRID_MANHATTAN_DIAMETER = WORLD_GRID_SIZE * 2 - 2;
+
+export function bossRushEnemyLevel(playerLevel: number): number {
+  return Math.max(
+    1,
+    Math.floor(Number(playerLevel) || 1) + BOSS_RUSH_LEVEL_OFFSET,
+  );
+}
+
+export function bossRushCombatHp(playerLevel: number): number {
+  return linearEnemyMaxHp(bossRushEnemyLevel(playerLevel));
+}
+
+export function bossRushDokaPerEnemy(playerLevel: number): number {
+  const lvl = Math.max(1, Math.floor(Number(playerLevel) || 1));
+  return Math.max(
+    BOSS_RUSH_DOKA_MIN,
+    Math.floor(lvl * BOSS_RUSH_DOKA_PER_LEVEL),
+  );
+}
+
+export function bossRushRoomDoka(playerLevel: number, bosses = 2): number {
+  return bosses * bossRushDokaPerEnemy(playerLevel);
+}
+
+export function bossRushRoomXp(playerLevel: number, bosses = 2): number {
+  return bosses * bossRushEnemyLevel(playerLevel) * 20;
+}
+
+export function firstPlayerLevelBossRushHpExceedsCatalog(
+  catalogHp = CATALOG_BOSS_HP_SAMPLE,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(catalogHp) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (bossRushCombatHp(level) > need) return level;
+  }
+  return null;
+}
+
+export function firstPlayerLevelBossRushCrushOneShots(
+  enrage = 1,
+): number | null {
+  const mult = Math.max(1, Math.floor(Number(enrage) || 1));
+  for (let level = 1; level <= 200_000; level++) {
+    const raw = fallbackCrushRaw(bossRushEnemyLevel(level)) * mult;
+    const recv = damageAfterPlayerResPasses(raw);
+    if (recv >= linearPlayerMaxHp(level)) return level;
+  }
+  return null;
+}
+
+export function firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+  catalogDoka: number,
+  bosses = 2,
+): number | null {
+  const need = Math.max(0, Math.floor(Number(catalogDoka) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (bossRushRoomDoka(level, bosses) > need) return level;
+  }
+  return null;
+}
+
+export function firstPlayerLevelBossRushRoomDokaHitsClamp(
+  bosses = 2,
+): number | null {
+  for (let level = 1; level <= 200_000; level++) {
+    if (bossRushRoomDoka(level, bosses) > APPLY_REWARDS_MAX_DOKA_DELTA) {
+      return level;
+    }
+  }
+  return null;
+}
+
+export function firstPlayerLevelBossRushRoomXpHitsClamp(
+  bosses = 2,
+): number | null {
+  for (let level = 1; level <= 200_000; level++) {
+    if (bossRushRoomXp(level, bosses) > APPLY_REWARDS_MAX_XP_DELTA) {
+      return level;
+    }
+  }
+  return null;
+}
+
+export function firstLevelFormulaMpAtLeast(need: number): number | null {
+  const cap = Math.max(0, Math.floor(Number(need) || 0));
+  for (let level = 1; level <= 2000; level++) {
+    if (formulaMp(level) >= cap) return level;
+  }
+  return null;
+}
+
+/** Display-name pieceTypes miss ENEMY_KITS and fall back to pawn. */
+export function kitForPieceName(pieceName: string, zone: unknown): string[] {
+  return buildEnemyKit(pieceName as ChessPieceType, zone);
+}
+
+/**
+ * Catalog world-boss spawn (`WorldExploration.tsx` 6537): `level: player + 5`.
+ * Combat HP uses `boss_` + `baseStats.hp` (~350). Battle-start still runs
+ * `computeEnemyStats(level, pieceType)` and overwrites catalog RES/SR/CHC/SP
+ * (`11872–11903`). Spawn `Math.min(50, baseStats.res)` is thrown away.
+ */
+export const WORLD_BOSS_LEVEL_OFFSET = 5;
+/** Spawn clamp (`WorldExploration.tsx` 6559). Not the combat RES. */
+export const WORLD_BOSS_SPAWN_RES_CLAMP = 50;
+/** Shop Doka-to-HP (`itemShop.ts` `paidHealFromLiveWallet`: `floor(doka * 3)`). */
+export const DOKA_HEAL_HP_PER_DOKA = 3;
+
+export function worldBossEnemyLevel(playerLevel: number): number {
+  return Math.max(
+    1,
+    Math.floor(Number(playerLevel) || 1) + WORLD_BOSS_LEVEL_OFFSET,
+  );
+}
+
+export function firstPlayerLevelWorldBossStatCanHit100(
+  piece: ChessPieceType,
+  stat: "res" | "sr" | "chc",
+): number | null {
+  for (let level = 1; level <= 400; level++) {
+    const bounds = enemyStatBounds(worldBossEnemyLevel(level), piece);
+    if (bounds[stat].max >= 100) return level;
+  }
+  return null;
+}
+
+/** Optimistic Frost TTK vs a fixed HP pool (catalog world-boss HP, no RES). */
+export function playerFrostTurnsToKillHp(
+  hp: number,
+  playerLevel: number,
+  spellUpgradeLevel = 0,
+  ap = formulaAp(playerLevel),
+): number {
+  const pool = Math.max(1, Math.floor(Number(hp) || 0));
+  const dpt = playerFrostDamagePerTurn(playerLevel, spellUpgradeLevel, ap);
+  if (dpt <= 0) return Number.POSITIVE_INFINITY;
+  return Math.ceil(pool / dpt);
+}
+
+/**
+ * RES 100 reduces every hit to the chip-1 floor (`computeDamage` max(1, …)).
+ * TTK is then catalog HP / Frost casts per turn.
+ */
+export function worldBossChip1FrostTurns(
+  playerLevel: number,
+  catalogHp = CATALOG_BOSS_HP_SAMPLE,
+): number {
+  const casts = playerFrostCastsPerTurn(formulaAp(playerLevel));
+  if (casts <= 0) return Number.POSITIVE_INFINITY;
+  return Math.ceil(Math.max(1, Math.floor(Number(catalogHp) || 0)) / casts);
+}
+
+export function dokaHealCostToFillFrom(
+  currentHp: number,
+  level: number,
+): number {
+  const max = linearPlayerMaxHp(level);
+  const missing = Math.max(
+    0,
+    max - Math.max(0, Math.floor(Number(currentHp) || 0)),
+  );
+  if (missing <= 0) return 0;
+  return Math.ceil(missing / DOKA_HEAL_HP_PER_DOKA);
+}
+
+export function firstPlayerLevelDokaHealFromOneExceeds(
+  limit: number,
+): number | null {
+  const cap = Math.max(0, Math.floor(Number(limit) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (dokaHealCostToFillFrom(1, level) > cap) return level;
+  }
+  return null;
+}
+
+/**
+ * First level where a 50-Doka 30% potion restores more HP than spending
+ * those same 50 Doka on the 3 HP/Doka shop converter.
+ */
+export function firstPlayerLevelPotionBeatsFlatDokaHeal(): number | null {
+  const flatHp = DOKA_HEAL_HP_PER_DOKA * HEALTH_POTION_COST;
+  for (let level = 1; level <= 200_000; level++) {
+    if (healthPotionHpRestored(level) > flatHp) return level;
+  }
+  return null;
+}
+
+/**
+ * Initiative overlay AP/MP for a regular (non-summon) enemy.
+ * Mirrors `resolveEnemyApMp` (`summonIntegration.ts` 206–209):
+ *   ap = enemy.level, mp = max(1, floor(level / 2)).
+ * AI still takes one action per turn — this is display-only.
+ */
+export function overlayEnemyAp(level: number): number {
+  return Math.max(1, Math.floor(Number(level) || 1));
+}
+
+export function overlayEnemyMp(level: number): number {
+  return Math.max(1, Math.floor(overlayEnemyAp(level) / 2));
+}
+
+/** Overlay ATK (`WorldExploration.tsx` 17405): `e.level * 2`. */
+export function overlayEnemyAtk(level: number): number {
+  return overlayEnemyAp(level) * 2;
+}
+
+/**
+ * Hardcoded overlay combat stats (`WorldExploration.tsx` 17406–17408).
+ * Battle-start `computeEnemyStats` RES/SP/CHC are thrown away here.
+ */
+export const INITIATIVE_OVERLAY_ENEMY_RES = 0;
+export const INITIATIVE_OVERLAY_ENEMY_SP = 0;
+export const INITIATIVE_OVERLAY_ENEMY_CHC = 2;
+
+export function firstEnemyLevelOverlayApExceedsPlayerFormulaAp(
+  playerLevel = 1,
+): number | null {
+  const playerAp = formulaAp(playerLevel);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (overlayEnemyAp(enemyLevel) > playerAp) return enemyLevel;
+  }
+  return null;
+}
+
+/**
+ * First enemy level whose unenraged Crush raw exceeds a crit kit hit
+ * (`raw * 2` from `Math.random()*100 < enemy.chc`). Bishop CHC 100 at 115
+ * always crits Frost 20 → 40; Crush still wins from 17.
+ */
+export function firstEnemyLevelCrushExceedsCritKit(
+  kitBase: number,
+): number | null {
+  const critKit = kitCastRaw(kitBase) * 2;
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (fallbackCrushRaw(enemyLevel) > critKit) return enemyLevel;
+  }
+  return null;
+}
+
+/** Create-time evasion / resilience / SR. saveBattleStats never writes them. */
+export const PLAYER_CREATE_EVASION = Number(startingChampionStats().evasion);
+export const PLAYER_CREATE_RESILIENCE = Number(
+  startingChampionStats().resilience,
+);
+export const PLAYER_CREATE_SR = Number(startingChampionStats().sr);
+export const PLAYER_CREATE_CHC = Number(startingChampionStats().chc);
+
+/**
+ * Live linear HP is `100 + 5*(L-1)`. First level where that integer is
+ * strictly greater than MAX_SAFE_INTEGER (IEEE can no longer count HP).
+ */
+export function firstLevelLinearHpNotSafeInteger(): number {
+  const t = Number.MAX_SAFE_INTEGER;
+  return Math.floor((t - 100) / 5) + 2;
+}
+
+/**
+ * Unused exponential `getPlayerBaseStats` HP becomes IEEE Inf (JSON null)
+ * once `100 * 1.05^(L-1)` overflows Number.
+ */
+export function firstLevelExponentialHpNotJsonSafe(limit = 200_000): number {
+  for (let n = 1; n <= limit; n += n < 2000 ? 1 : 100) {
+    const hp = getPlayerBaseStats(n, DEFAULT_LEVELUP_CONFIG).hp;
+    if (!Number.isFinite(hp)) return n;
+  }
+  return limit + 1;
+}
+
+/** Last overworld tier is `maxTier = floor(999 / tierSize)` → levels `maxTier*ts+1 .. (maxTier+1)*ts`. */
+export function overworldPickMaxLevel(tierSize = 10): number {
+  const ts = Math.max(1, Math.floor(Number(tierSize) || 10));
+  const maxTier = Math.floor(999 / ts);
+  return (maxTier + 1) * ts;
+}
+
+/** Depth-5 boost is +3 tiers. Applied *after* the 999-cap pick. */
+export function dungeonMaxEnemyLevel(
+  dungeonDepth = DUNGEON_SPAWN_DEPTH_CAP,
+  tierSize = 10,
+): number {
+  const extras = dungeonSpawnExtras(dungeonDepth);
+  return dungeonScaledEnemyLevel(
+    overworldPickMaxLevel(tierSize),
+    extras.tierBoost,
+    tierSize,
+  );
+}
+
+/** First requested stress level above the spawnable dungeon max (100% under-level even in depth 5). */
+export function firstStressLevelFullyUnderDungeonCap(): number | null {
+  const cap = dungeonMaxEnemyLevel();
+  for (const level of STRESS_LEVELS) {
+    if (level > cap) return level;
+  }
+  return null;
+}
+
+export type SimFamily = (typeof FAMILY_TYPES)[number];
+
+/** Spawn placeholder `round(L*8+20)` × family `hpMult`. Battle-start then replaces HP with linear `50*(1+0.05*(L-1))`. */
+export function familySpawnHp(level: number, family: SimFamily): number {
+  const m = FAMILY_STAT_MULTS[family];
+  return Math.max(1, Math.round(spawnPlaceholderHp(level) * m.hpMult));
+}
+
+export function familyCatalogRes(family: SimFamily): number {
+  return FAMILY_STAT_MULTS[family].res;
+}
+
+export function familyCatalogSpRes(family: SimFamily): number {
+  return FAMILY_STAT_MULTS[family].spRes;
+}
+
+export const FAMILY_VARIANT_CHANCE_SIM = FAMILY_VARIANT_CHANCE;
+
+/**
+ * Catalog Frost cooldown. `starter-frost` has no `cooldown` field, so
+ * `nextSpellCooldownTurns` treats it as 0 and AP becomes a cast multiplier.
+ */
+export function starterFrostCooldownTurns(): number {
+  const frost = starterSpells.find((s) => s.id === "starter-frost");
+  const n = Math.floor(Number(frost?.cooldown) || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+export function firstLevelFormulaFrostCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (playerFrostCastsPerTurn(formulaAp(level)) >= need) return level;
+  }
+  return null;
+}
+
+function starterSpellById(id: string) {
+  return starterSpells.find((s) => s.id === id);
+}
+
+function catalogCooldownTurns(id: string): number {
+  const n = Math.floor(Number(starterSpellById(id)?.cooldown) || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function catalogApCost(id: string): number {
+  return Math.max(0, Math.floor(Number(starterSpellById(id)?.apCost) || 0));
+}
+
+/** Catalog Timestep (`spell-timestep`): AP 0, no cooldown, once per battle. */
+export function starterTimestepCooldownTurns(): number {
+  return catalogCooldownTurns("spell-timestep");
+}
+
+export function starterTimestepApCost(): number {
+  return catalogApCost("spell-timestep");
+}
+
+export function starterTimestepIsOncePerBattle(): boolean {
+  return starterSpellById("spell-timestep")?.isTimestep === true;
+}
+
+/**
+ * Dump remaining AP, Timestep restores `getPlayerBaseStats` AP, dump again.
+ * Live restore (`WorldExploration.tsx` restoreApMp) uses the formula, not persist 20.
+ */
+export function frostCastsWithTimestepRefill(ap: number): number {
+  return playerFrostCastsPerTurn(ap) * 2;
+}
+
+export function firstLevelTimestepFrostCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (frostCastsWithTimestepRefill(formulaAp(level)) >= need) return level;
+  }
+  return null;
+}
+
+/** Catalog Dire Wolf. AP 3, no cooldown. Player spawn path has no cap. */
+export const SUMMON_DIRE_WOLF_ID = "summon-dire-wolf";
+
+export function starterDireWolfCooldownTurns(): number {
+  return catalogCooldownTurns(SUMMON_DIRE_WOLF_ID);
+}
+
+export function starterDireWolfApCost(): number {
+  return catalogApCost(SUMMON_DIRE_WOLF_ID);
+}
+
+export function playerSummonCastsPerTurn(ap: number): number {
+  const cost = Math.max(1, starterDireWolfApCost());
+  return Math.max(0, Math.floor(Math.max(0, ap) / cost));
+}
+
+export function firstLevelFormulaSummonCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (playerSummonCastsPerTurn(formulaAp(level)) >= need) return level;
+  }
+  return null;
+}
+
+/** Live player spawn (`spawnPlayerSummon`) does not read ENEMY_SUMMON_CAP. */
+export const PLAYER_SUMMON_CAP_LIVE: number | null = null;
+export const ENEMY_SUMMON_CAP_SIM = ENEMY_SUMMON_CAP;
+export const MAX_ENEMIES_SIM = MAX_ENEMIES;
+export const BATTLE_GRID_CELL_COUNT = WORLD_GRID_SIZE * WORLD_GRID_SIZE;
+
+/**
+ * Unknown summon `pieceType` ("wolf"/"golem"/…) uses king multipliers
+ * (`getEnemyBaseStats` fallback). Seed is the spell id, same as spawn.
+ */
+export function playerSummonRolledStats(playerLevel: number) {
+  return getEnemyBaseStats(playerLevel, "king", SUMMON_DIRE_WOLF_ID);
+}
+
+export function playerSummonStatBounds(playerLevel: number) {
+  return enemyStatBounds(playerLevel, "king");
+}
+
+export function firstPlayerLevelSummonMaxInitExceedsCreate(): number | null {
+  for (let level = 1; level <= 400; level++) {
+    if (playerSummonStatBounds(level).init.max > PLAYER_CREATE_INIT) {
+      return level;
+    }
+  }
+  return null;
+}
+
+export function firstPlayerLevelSummonResCanHit100(): number | null {
+  return firstLevelResCanHit100("king");
+}
+
+/** Live Mending Mist (`mapModifiers.ts`): `floor(maxHp * 0.05)` on turn-start. */
+export const MENDING_MIST_REGEN_FRACTION =
+  MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT;
+
+export function mendingMistRegen(maxHp: number): number {
+  return Math.floor(Math.max(0, maxHp) * MENDING_MIST_REGEN_FRACTION);
+}
+
+export function mendingMistRegenAtPlayerLevel(level: number): number {
+  return mendingMistRegen(linearPlayerMaxHp(level));
+}
+
+/**
+ * Live player turn-start looks up `id === "player"` inside `combatantsRef`
+ * (`playerTurnStartModifierTarget`). The player is not in that store, so the
+ * hook is skipped. Plague / Void Rift have separate `characterStats` writes;
+ * Mending Mist does not.
+ */
+export function playerCombatantsRefHasPlayerEntry(
+  combatants: Array<{ id?: string }>,
+): boolean {
+  return playerTurnStartModifierTarget(combatants) !== undefined;
+}
+
+export const PLAYER_TURN_START_COMMITS_MENDING_MIST = false;
+export const ENEMY_TURN_START_COMMITS_MENDING_MIST_TO_STORE = false;
+
+/** First player level whose Mist regen exceeds a raw damage number. */
+export function firstPlayerLevelMistRegenExceeds(
+  damage: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(0, damage);
+  for (let level = 1; level <= limit; level++) {
+    if (mendingMistRegenAtPlayerLevel(level) > need) return level;
+  }
+  return null;
+}
+
+/** Catalog Sacrifice (`spell-sacrifice`): lose 20% current HP, deal 3× that. */
+export const SACRIFICE_HP_FRACTION = 0.2;
+export const SACRIFICE_DAMAGE_MULT = 3;
+export const SACRIFICE_ID = "spell-sacrifice";
+
+export function starterSacrificeApCost(): number {
+  return catalogApCost(SACRIFICE_ID);
+}
+
+export function starterSacrificeCooldownTurns(): number {
+  return catalogCooldownTurns(SACRIFICE_ID);
+}
+
+export function starterSacrificeIsPhysical(): boolean {
+  return starterSpellById(SACRIFICE_ID)?.isPhysical === true;
+}
+
+export function sacrificeHpLoss(currentHp: number): number {
+  return Math.floor(Math.max(0, currentHp) * SACRIFICE_HP_FRACTION);
+}
+
+export function sacrificeRawDamage(currentHp: number): number {
+  return sacrificeHpLoss(currentHp) * SACRIFICE_DAMAGE_MULT;
+}
+
+export function sacrificeRawAtFullHp(level: number): number {
+  return sacrificeRawDamage(linearPlayerMaxHp(level));
+}
+
+/** `enemyTakesDamage` applies RES once, then chips at least 1. */
+export function sacrificeDamageAfterEnemyRes(
+  raw: number,
+  enemyRes: number,
+): number {
+  return Math.max(1, Math.round(raw * Math.max(0, 1 - enemyRes / 100)));
+}
+
+export function firstPlayerLevelSacrificeRawExceeds(
+  hp: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(0, hp);
+  for (let level = 1; level <= limit; level++) {
+    if (sacrificeRawAtFullHp(level) >= need) return level;
+  }
+  return null;
+}
+
+/**
+ * Live Arcane Surge (`mapModifiers.ts` onApCost): `max(1, base - 1)`.
+ * Wired at cast via `mapModifierRegistry.applyApCost`.
+ */
+export const ARCANE_SURGE_AP_DISCOUNT = MAP_MODIFIER_ARCANE_SURGE_AP_DISCOUNT;
+
+export function arcaneSurgeApCost(baseCost: number): number {
+  return Math.max(
+    1,
+    Math.floor(Number(baseCost) || 0) - ARCANE_SURGE_AP_DISCOUNT,
+  );
+}
+
+export function playerFrostCastsPerTurnWithArcaneSurge(ap: number): number {
+  const cost = arcaneSurgeApCost(FROST_AP_COST);
+  return Math.max(0, Math.floor(Math.max(0, ap) / cost));
+}
+
+export function frostCastsWithTimestepAndArcaneSurge(ap: number): number {
+  return playerFrostCastsPerTurnWithArcaneSurge(ap) * 2;
+}
+
+export function firstLevelArcaneSurgeFrostCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (playerFrostCastsPerTurnWithArcaneSurge(formulaAp(level)) >= need) {
+      return level;
+    }
+  }
+  return null;
+}
+
+/**
+ * Two-roll maps can pair `arcane_surge` with `arcane_overflow`. Both hooks
+ * are `max(1, cost - 1)` and `applyApCost` chains them in registry order
+ * (`mapModifiers.cost.test.ts`). Frost 3 → 1.
+ */
+export const ARCANE_OVERFLOW_AP_DISCOUNT =
+  MAP_MODIFIER_ARCANE_OVERFLOW_AP_DISCOUNT;
+
+export function stackedArcaneDiscountApCost(baseCost: number): number {
+  let cost = Math.floor(Number(baseCost) || 0);
+  cost = Math.max(1, cost - ARCANE_SURGE_AP_DISCOUNT);
+  cost = Math.max(1, cost - ARCANE_OVERFLOW_AP_DISCOUNT);
+  return cost;
+}
+
+export function playerFrostCastsPerTurnWithStackedArcane(ap: number): number {
+  const cost = stackedArcaneDiscountApCost(FROST_AP_COST);
+  return Math.max(0, Math.floor(Math.max(0, ap) / cost));
+}
+
+export function frostCastsWithTimestepAndStackedArcane(ap: number): number {
+  return playerFrostCastsPerTurnWithStackedArcane(ap) * 2;
+}
+
+export function firstLevelStackedArcaneFrostCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (playerFrostCastsPerTurnWithStackedArcane(formulaAp(level)) >= need) {
+      return level;
+    }
+  }
+  return null;
+}
+
+/**
+ * Titan's Vigor `onBattleStart` adds a flat 1000 HP to every combatant in
+ * `combatantsRef` (`mapModifiers.ts`). The player is not in that store
+ * (`playerTurnStartModifierTarget`). `onDamageDealt` then rolls 1–5× on
+ * `enemyTakesDamage` AFTER the RES chip-1 floor. Incoming Crush uses
+ * `playerTakesDamage` / melee `setCharacterStats` and never sees the roll.
+ */
+export const TITANS_VIGOR_HP_BONUS = MAP_MODIFIER_TITANS_VIGOR_HP_BONUS;
+export const TITANS_VIGOR_DMG_MIN = MAP_MODIFIER_TITANS_VIGOR_MIN_MULTIPLIER;
+export const TITANS_VIGOR_DMG_MAX = MAP_MODIFIER_TITANS_VIGOR_MAX_MULTIPLIER;
+export const GLASS_REALM_DMG_MULT = MAP_MODIFIER_GLASS_REALM_DAMAGE_MULTIPLIER;
+export const BATTLE_START_PLAYER_IN_COMBATANTS_REF = false;
+export const PLAYER_TAKES_DAMAGE_RUNS_APPLY_DAMAGE_DEALT = false;
+
+export function titansVigorHp(baseHp: number): number {
+  return Math.max(1, Math.floor(Number(baseHp) || 0)) + TITANS_VIGOR_HP_BONUS;
+}
+
+/**
+ * Live `enemyTakesDamage`: RES floor to ≥1, then `applyDamageDealt` multiplies.
+ * Titan's Vigor 1–5 and Glass Realm ×2 chain in registry order.
+ */
+export function damageAfterResThenMapMods(
+  raw: number,
+  enemyRes: number,
+  dmgMult: number,
+): number {
+  const afterRes = Math.max(
+    1,
+    Math.round(raw * Math.max(0, 1 - enemyRes / 100)),
+  );
+  return afterRes * Math.max(1, Math.floor(Number(dmgMult) || 1));
+}
+
+export function titansMaxChip1(): number {
+  return damageAfterResThenMapMods(20, 100, TITANS_VIGOR_DMG_MAX);
+}
+
+export function glassChip1(): number {
+  return damageAfterResThenMapMods(20, 100, GLASS_REALM_DMG_MULT);
+}
+
+export function titansGlassMaxChip1(): number {
+  return damageAfterResThenMapMods(
+    20,
+    100,
+    TITANS_VIGOR_DMG_MAX * GLASS_REALM_DMG_MULT,
+  );
+}
+
+export function firstLevelFrostDumpWithMultExceeds(
+  hp: number,
+  dmgMult: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(hp) || 0));
+  for (let level = 1; level <= limit; level++) {
+    const dump =
+      playerFrostCastsPerTurn(formulaAp(level)) *
+      damageAfterResThenMapMods(playerFrostRaw(0), 100, dmgMult);
+    if (dump >= need) return level;
+  }
+  return null;
+}
+
+/**
+ * Doka Fever HP bonus (`mapModifiers.ts`):
+ * `if (c.isEnemy ?? c.side === "enemy")`. Overworld `generateEnemies` never
+ * writes `side` or `isEnemy`, so the +25% is a no-op. The 2× Doka hook is
+ * still applied at victory (`WorldExploration.tsx` applyRewardMultiplier).
+ */
+export const DOKA_FEVER_HP_BONUS_FRACTION =
+  MAP_MODIFIER_DOKA_FEVER_ENEMY_HP_BONUS;
+export const DOKA_FEVER_REWARD_MULT = MAP_MODIFIER_DOKA_FEVER_REWARD_MULTIPLIER;
+export const OVERWORLD_SPAWN_SETS_SIDE = false;
+export const OVERWORLD_SPAWN_SETS_IS_ENEMY = false;
+
+export function dokaFeverAppliesHpBonus(combatant: {
+  isEnemy?: boolean;
+  side?: string;
+}): boolean {
+  return Boolean(combatant.isEnemy ?? combatant.side === "enemy");
+}
+
+export function dokaFeverHpBonus(baseHp: number): number {
+  return Math.floor(
+    Math.max(0, Math.floor(Number(baseHp) || 0)) * DOKA_FEVER_HP_BONUS_FRACTION,
+  );
+}
+
+/**
+ * Iron Curse `onBattleStart`: `res = floor(res * 1.3)` on combatantsRef
+ * (player absent). After RES 100 the factor is already 0, so 130% is a
+ * no-op on chip-1. Before that it pulls rook max-RES to 100 earlier.
+ */
+export const IRON_CURSE_RES_MULT = 1 + MAP_MODIFIER_IRON_CURSE_RES_BONUS;
+
+export function ironCursedRes(res: number): number {
+  return Math.floor(Math.max(0, Number(res) || 0) * IRON_CURSE_RES_MULT);
+}
+
+export function firstLevelIronCursedResCanHit100(
+  piece: ChessPieceType,
+): number | null {
+  for (let level = 1; level <= 400; level++) {
+    if (ironCursedRes(enemyStatBounds(level, piece).res.max) >= 100) {
+      return level;
+    }
+  }
+  return null;
+}
+
+/**
+ * `spawnSummonUnit` spreads `computeEnemyStats` (sp/sr/init/res/chc) — no
+ * `atk`. Hunter AI `findKitSpell` reads `summon.spells`, which spawn never
+ * copies from `summonKit`, so adjacent wolves melee. Executor:
+ * `calcScaledDamage(atk ?? level, level, 0)` → player.level. Enemy
+ * summoners pass `characterStats.level`, not the 999-capped pack level.
+ */
+export const SUMMON_SPAWN_SETS_ATK = false;
+export const SUMMON_SPAWN_COPIES_KIT_ONTO_SPELLS = false;
+
+export function summonMeleeRaw(playerLevel: number, atk?: number): number {
+  const lvl = Math.max(1, Math.floor(Number(playerLevel) || 1));
+  return calcScaledDamage(atk ?? lvl, lvl, 0);
+}
+
+export function firstPlayerLevelSummonMeleeExceeds(
+  raw: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(raw) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (summonMeleeRaw(level) >= need) return level;
+  }
+  return null;
+}
+
+/**
+ * Vampiric Ground `onDamageDealt` (`mapModifiers.ts`) does
+ * `attacker.hp += floor(damage * 0.15)`. Live `enemyTakesDamage` passes a
+ * throwaway `{hp, maxHp, id:"player"}` snapshot when the caster is the
+ * player (`WorldExploration.tsx`), so the heal never writes `characterStats`.
+ * Incoming Crush uses `playerTakesDamage` and never enters this hook.
+ * After RES 100, 15% of chip-1 floors to 0; Titans+Glass max chip-10 heals 1.
+ */
+export const VAMPIRIC_LIFESTEAL_FRACTION =
+  MAP_MODIFIER_VAMPIRIC_GROUND_LIFESTEAL_PERCENT;
+export const PLAYER_DAMAGE_DEALT_ATTACKER_IS_LIVE_STATS = false;
+
+export function vampiricHeal(damage: number): number {
+  return Math.floor(
+    Math.max(0, Number(damage) || 0) * VAMPIRIC_LIFESTEAL_FRACTION,
+  );
+}
+
+/**
+ * Mirror Field WX `mirrorFieldReflect` (`WorldExploration.tsx`): 20% chance
+ * to write `hp -= preCritDmgBM` on the player and return true so
+ * `spellEngine` records the cast and **does not hit the enemy**.
+ * `preCritDmgBM` is catalog Frost after upgrade/crit/Blood Moon/Fury and
+ * **before** SP / enemy SR×RES (`spellEngine.ts`). Skips
+ * `playerTakesDamage` (create RES 10 and Shield Charm never apply).
+ * Registry `mirror_field` is a no-op placeholder (`mapModifiers.ts`); the
+ * live path is the WX id-check. Sacrifice uses `dealDamage` and skips this.
+ */
+export const MIRROR_FIELD_REFLECT_CHANCE = 0.2;
+export const MIRROR_FIELD_REFLECT_FRACTION = 1;
+export const MIRROR_FIELD_CANCELS_HIT = true;
+export const MIRROR_FIELD_SKIPS_PLAYER_TAKES_DAMAGE = true;
+export const BLOOD_MOON_DAMAGE_MULT = 1.25;
+export const FURY_POTION_DAMAGE_MULT = 1.25;
+export const SACRIFICE_USES_MIRROR_FIELD_REFLECT = false;
+
+/**
+ * Void Mirror family reflect (`castHelpers.ts`): `floor(preCritDmgBM * 0.25)`
+ * writes player HP directly. The enemy hit still lands (post-SR×RES).
+ * Family tag is set at spawn (`maybeApplyEnemyFamilyVariant`) and is **not**
+ * cleared when battle-start overwrites HP/RES/SP (10-22-001). P(family) =
+ * `FAMILY_VARIANT_CHANCE / FAMILY_TYPES.length`. Shield Charm is not
+ * consulted. Sacrifice skips this path.
+ */
+export const VOID_MIRROR_REFLECT_FRACTION = 0.25;
+export const VOID_MIRROR_HIT_STILL_LANDS = true;
+export const VOID_MIRROR_SKIPS_PLAYER_TAKES_DAMAGE = true;
+export const VOID_MIRROR_SKIPS_SHIELD_CHARM = true;
+export const FAMILY_STRING_SURVIVES_BATTLE_START_OVERWRITE = true;
+export const FAMILY_TYPE_COUNT = FAMILY_TYPES.length;
+export const VOID_MIRROR_FAMILY_ID = "void_mirror";
+
+/** Tide Shade melee on-hit (`WorldExploration.tsx`): −1 MP for 2 turns. */
+export const TIDE_SHADE_MP_DEBUFF = -1;
+export const TIDE_SHADE_MP_DURATION = 2;
+/** Ember Knight melee on-hit: 3 dmg/turn for 3 turns (DoT via playerTakesDamage). */
+export const EMBER_KNIGHT_BURN_TICK = 3;
+export const EMBER_KNIGHT_BURN_DURATION = 3;
+
+export const TIME_WARP_TIMER_SECONDS = MAP_MODIFIER_TIME_WARP_TIMER;
+export const NORMAL_TURN_TIMER_SECONDS = MAP_MODIFIER_NORMAL_TIMER;
+
+/**
+ * Live `spellEngine` Blood Moon / Fury / crit fold **before**
+ * `calculatePlayerDamage`. Upgrade 0 catalog Frost is 20, not the SP-buffed
+ * 21 that `playerFrostRaw` reports.
+ */
+export function frostPreCritDmgBm(opts?: {
+  crit?: boolean;
+  bloodMoon?: boolean;
+  fury?: boolean;
+  upgrade?: number;
+}): number {
+  const upgrade = Math.max(0, Math.floor(Number(opts?.upgrade) || 0));
+  const raw = calcScaledDamage(KIT_FROST_DAMAGE, 1, upgrade);
+  const preCrit = opts?.crit ? raw * 2 : raw;
+  const blood = opts?.bloodMoon ? BLOOD_MOON_DAMAGE_MULT : 1;
+  const fury = opts?.fury ? FURY_POTION_DAMAGE_MULT : 1;
+  return Math.round(preCrit * blood * fury);
+}
+
+export function voidMirrorReflect(preCritDmgBm: number): number {
+  return Math.floor(
+    Math.max(0, Number(preCritDmgBm) || 0) * VOID_MIRROR_REFLECT_FRACTION,
+  );
+}
+
+export function mirrorFieldReflect(preCritDmgBm: number): number {
+  return Math.max(0, Math.floor(Number(preCritDmgBm) || 0));
+}
+
+export function voidMirrorFamilyChance(): number {
+  return FAMILY_VARIANT_CHANCE / Math.max(1, FAMILY_TYPES.length);
+}
+
+export function frostDumpVoidMirrorSelfDamage(
+  ap: number,
+  preCritDmgBm = frostPreCritDmgBm(),
+): number {
+  return voidMirrorReflect(preCritDmgBm) * playerFrostCastsPerTurn(ap);
+}
+
+export function frostDumpMirrorFieldExpectedSelfDamage(
+  ap: number,
+  preCritDmgBm = frostPreCritDmgBm(),
+): number {
+  return (
+    MIRROR_FIELD_REFLECT_CHANCE *
+    mirrorFieldReflect(preCritDmgBm) *
+    playerFrostCastsPerTurn(ap)
+  );
+}
+
+export function firstLevelFrostDumpSelfDamageExceeds(
+  damagePerCast: number,
+  need: number,
+  limit = 200_000,
+): number | null {
+  const per = Math.max(0, Number(damagePerCast) || 0);
+  const want = Math.max(0, Number(need) || 0);
+  for (let level = 1; level <= limit; level++) {
+    if (per * playerFrostCastsPerTurn(formulaAp(level)) > want) return level;
+  }
+  return null;
+}
+
+export function tideShadeMpDebuffOverFormulaMp(level: number): number {
+  const mp = formulaMp(level);
+  if (mp <= 0) return Number.POSITIVE_INFINITY;
+  return Math.abs(TIDE_SHADE_MP_DEBUFF) / mp;
+}
+
+export function firstLevelTideShadeDebuffBelowMpPercent(
+  percent: number,
+  limit = 200_000,
+): number | null {
+  const pct = Math.max(0, percent);
+  for (let level = 1; level <= limit; level++) {
+    if (tideShadeMpDebuffOverFormulaMp(level) < pct) return level;
+  }
+  return null;
+}
+
+export function frostCastsPerTimerSecond(
+  ap: number,
+  timerSeconds: number,
+): number {
+  const secs = Math.max(1, Number(timerSeconds) || 1);
+  return playerFrostCastsPerTurn(ap) / secs;
+}
+
+/**
+ * Paper Windstorm live miss vs advertised range.
+ *
+ * Registry hook is a no-op marker (`mapModifiers.ts`). The constant
+ * `MAP_MODIFIER_PAPER_WINDSTORM_RANGE_REDUCTION` (0.5) is never read by
+ * targeting. Live WX:
+ *   - player `spellEngine` / `paperWindstormMiss`: 30% miss, any range
+ *   - enemy kit-cast and fallback Fire Bolt: 50% miss when range > 1
+ *   - fallback Crush range 1 never rolls the miss
+ */
+export const PAPER_WINDSTORM_PLAYER_MISS_CHANCE = 0.3;
+export const PAPER_WINDSTORM_ENEMY_MISS_CHANCE_IF_RANGE_GT_1 = 0.5;
+export const PAPER_WINDSTORM_ADVERTISED_RANGE_REDUCTION =
+  MAP_MODIFIER_PAPER_WINDSTORM_RANGE_REDUCTION;
+export const PAPER_WINDSTORM_RANGE_REDUCTION_APPLIED = false;
+export const FALLBACK_CRUSH_RANGE = 1;
+export const FALLBACK_FIREBOLT_RANGE = 3;
+
+export function paperWindstormEnemyMissChance(range: number): number {
+  const r = Number(range);
+  if (!Number.isFinite(r) || r <= 1) return 0;
+  return PAPER_WINDSTORM_ENEMY_MISS_CHANCE_IF_RANGE_GT_1;
+}
+
+export function frostDumpPaperWindstormExpectedHits(ap: number): number {
+  return playerFrostCastsPerTurn(ap) * (1 - PAPER_WINDSTORM_PLAYER_MISS_CHANCE);
+}
+
+export function frostDumpPaperWindstormExpectedMisses(ap: number): number {
+  return playerFrostCastsPerTurn(ap) * PAPER_WINDSTORM_PLAYER_MISS_CHANCE;
+}
+
+/**
+ * Chaos Initiative (`mapModifiers.ts` onTurnOrderSort): Fisher-Yates on
+ * non-summon owners, summons trailing their owner. WX applies it when
+ * `currentTurnIndexRef === 0` *after* dispatching `prevOrder[0]`
+ * (`WorldExploration.tsx` 14717–14721). At 250+ INIT freeze already puts
+ * the player last (09-21-001); this shuffle is then the only remaining
+ * player-first lottery, P = 1 / livingOwners (player + enemies).
+ */
+export const CHAOS_INITIATIVE_SHUFFLES_WHEN_INDEX_WRAPS_TO_ZERO = true;
+export const CHAOS_INITIATIVE_DISPATCHES_BEFORE_SHUFFLE = true;
+
+export function chaosInitiativePlayerFirstChance(livingOwners: number): number {
+  const n = Math.max(1, Math.floor(Number(livingOwners) || 1));
+  return 1 / n;
+}
+
+/**
+ * Starter Shield (`starter-shield`) is a 1.3× RES buff. Fallback Crush
+ * melee reads `characterStats.res` once and writes HP directly — it does
+ * **not** enter `playerTakesDamage` (where `getStatModifier` would apply
+ * the buff) and does **not** multiply RES by the Shield row. Shield Charm
+ * absorb 20 still runs on that melee path (09-25-002).
+ */
+export const CRUSH_MELEE_SKIPS_PLAYER_TAKES_DAMAGE = true;
+export const CRUSH_MELEE_USES_GET_STAT_MODIFIER = false;
+export const STARTER_SHIELD_ID = "starter-shield";
+
+export function starterShieldResMultiplier(): number {
+  const spell = starterSpells.find((s) => s.id === STARTER_SHIELD_ID);
+  const m = Number(spell?.buffModifier);
+  return Number.isFinite(m) && m > 0 ? m : 1.3;
+}
+
+export function crushMeleeResIfShieldApplied(
+  createRes = PLAYER_CREATE_RES,
+): number {
+  return createRes * starterShieldResMultiplier();
+}
+
+/**
+ * Slime Flood and Frozen Terrain each double walk MP via
+ * `mapModifierRegistry.applyMpCost` (they stack). 09-28-003: formula MP
+ * covers a 16-tile grid walk at 300. Stacked 4× moves that breakpoint.
+ */
+export function walkCostPerTile(opts: {
+  slimeFlood?: boolean;
+  frozenTerrain?: boolean;
+}): number {
+  return enemyWalkCostPerTile({
+    slimeFlood: opts.slimeFlood === true,
+    frozenTerrain: opts.frozenTerrain === true,
+  });
+}
+
+export function gridWalkMpCost(opts: {
+  slimeFlood?: boolean;
+  frozenTerrain?: boolean;
+}): number {
+  return WORLD_GRID_SIZE * walkCostPerTile(opts);
+}
+
+export function firstLevelFormulaMpCoversGridWalk(opts: {
+  slimeFlood?: boolean;
+  frozenTerrain?: boolean;
+}): number | null {
+  return firstLevelFormulaMpAtLeast(gridWalkMpCost(opts));
+}
+
+/**
+ * Live player walk (`battleSetup.thornedGroundWalkDamage`): 5 HP per extra
+ * tile after the first. Mouse and touch both call `applyBattleWalkHazards`.
+ * Enemy `computeReachable` never calls this helper.
+ */
+export function thornedWalkDamage(pathLength: number): number {
+  return thornedGroundWalkDamage(pathLength);
+}
+
+/**
+ * Registry `thorned_ground.onDamageDealt` (`pathLength > 2` then
+ * `(n-2)*5`). Walk hazards do not go through that hook — they use
+ * `thornedWalkDamage` instead. Kept so the split is observable.
+ */
+export function thornedRegistryHookDamage(pathLength: number): number {
+  const n = Math.max(0, Math.floor(Number(pathLength) || 0));
+  if (n <= MAP_MODIFIER_THORN_THRESHOLD) return 0;
+  return (
+    (n - MAP_MODIFIER_THORN_THRESHOLD) * MAP_MODIFIER_THORN_DAMAGE_PER_TILE
+  );
+}
+
+/** Tiles needed so live walk thorns deal at least `damage` HP. */
+export function thornedWalkTilesToDealAtLeast(damage: number): number {
+  const need = Math.max(0, Math.floor(Number(damage) || 0));
+  if (need <= 0) return 1;
+  return Math.ceil(need / MAP_MODIFIER_THORN_DAMAGE_PER_TILE) + 1;
+}
+
+export function firstLevelFormulaMpCoversThornWalk(
+  damage: number,
+  opts?: { slimeFlood?: boolean; frozenTerrain?: boolean },
+): number | null {
+  const tiles = thornedWalkTilesToDealAtLeast(damage);
+  return firstLevelFormulaMpAtLeast(tiles * walkCostPerTile(opts ?? {}));
+}
+
+export function thornedWalkDamageAtFormulaMp(
+  level: number,
+  opts?: { slimeFlood?: boolean; frozenTerrain?: boolean },
+): number {
+  const cost = walkCostPerTile(opts ?? {});
+  const tiles = cost > 0 ? Math.floor(formulaMp(level) / cost) : 0;
+  return thornedWalkDamage(Math.min(tiles, BATTLE_GRID_MANHATTAN_DIAMETER));
+}
+
+export const THORNED_WALK_GRID_MAX_DAMAGE = thornedWalkDamage(
+  BATTLE_GRID_MANHATTAN_DIAMETER,
+);
+
+/**
+ * AI BFS (`enemyAI.computeReachable`) stops when `steps + costPerTile`
+ * exceeds `ENEMY_REACHABLE_STEP_BUDGET` (3). That is not formula MP and
+ * does not grow with level. Stacked Slime+Frozen cost 4 → 0 tiles.
+ */
+export const ENEMY_WALK_STEP_BUDGET_SIM = ENEMY_REACHABLE_STEP_BUDGET;
+
+export function enemyWalkTilesInBudget(opts?: {
+  slimeFlood?: boolean;
+  frozenTerrain?: boolean;
+}): number {
+  const cost = walkCostPerTile(opts ?? {});
+  if (cost <= 0) return ENEMY_WALK_STEP_BUDGET_SIM;
+  return Math.floor(ENEMY_WALK_STEP_BUDGET_SIM / cost);
+}
+
+/**
+ * Swift Winds `onTurnStart` does `combatant.mp += 2` on the modifier
+ * target. Player turn-start then overwrites `currentBattleMp` from
+ * `getPlayerBaseStats` + `getStatModifier`. Player is not in
+ * `combatantsRef` (`playerTurnStartModifierTarget` misses). Enemy AI
+ * walk uses `ENEMY_REACHABLE_STEP_BUDGET`, not `combatant.mp`.
+ */
+export const SWIFT_WINDS_MP_BONUS_SIM = MAP_MODIFIER_SWIFT_WINDS_MP_BONUS;
+export const SWIFT_WINDS_REACHES_CURRENT_BATTLE_MP = false;
+export const SWIFT_WINDS_CHANGES_ENEMY_STEP_BUDGET = false;
+
+export function playerTurnStartFindsPlayerIn(
+  combatants: Array<{ id?: string }>,
+): boolean {
+  return playerTurnStartModifierTarget(combatants) !== undefined;
+}
+
+/** Registry ids whose WX flags are `_is*` and whose hooks are empty. */
+export const NOOP_MAP_MODIFIER_IDS = ["gravity_well", "fog_of_war"] as const;
+export const MAP_MODIFIER_POOL_SIZE = EXISTING_MAP_MODIFIER_IDS.length;
+
+export function noopModifierFirstPickChance(): number {
+  return NOOP_MAP_MODIFIER_IDS.length / Math.max(1, MAP_MODIFIER_POOL_SIZE);
+}
+
+/**
+ * Family STRING combat hooks that survive the 10-22-001 battle-start
+ * overwrite: ember_knight (WX melee burn), tide_shade (WX melee −1 MP),
+ * void_mirror (`castHelpers` 25% reflect). The other four families keep
+ * pixels + a catalog tag.
+ */
+export const FAMILIES_WITH_STRING_COMBAT_HOOKS = [
+  "ember_knight",
+  "tide_shade",
+  "void_mirror",
+] as const;
+export const FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE = [
+  "wraith_bishop",
+  "iron_golem",
+  "plague_rat",
+  "bone_scribe",
+] as const;
+
+export function paintOnlyFamilyChance(): number {
+  return (
+    FAMILY_VARIANT_CHANCE *
+    (FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE.length /
+      Math.max(1, FAMILY_TYPES.length))
+  );
+}
+
+export function stringIdentityFamilyChance(): number {
+  return (
+    FAMILY_VARIANT_CHANCE *
+    (FAMILIES_WITH_STRING_COMBAT_HOOKS.length /
+      Math.max(1, FAMILY_TYPES.length))
+  );
+}
+
+/** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
+export const HAZARD_LAVA_MIN = 8;
+export const HAZARD_LAVA_MAX = 15;
+/** Live spike step: `5 + floor(rng * 6)` (WorldExploration.tsx 11469). */
+export const HAZARD_SPIKE_MIN = 5;
+export const HAZARD_SPIKE_MAX = 10;
+/** Lava Burning DoT after the step (WorldExploration.tsx 11452). */
+export const HAZARD_LAVA_BURN_PER_TURN = 3;
+/** Poison Arrow tick (`starter-poison` dotDamagePerTurn). */
+export const POISON_ARROW_TICK = 4;
+
+/**
+ * Player lava/spike subtract HP directly — they do not enter
+ * `playerTakesDamage`, so create RES is not applied.
+ */
+export function firstLevelHazardMaxBelowHpPercent(
+  maxDamage: number,
+  percent: number,
+): number | null {
+  const pct = Math.max(0, percent);
+  for (let level = 1; level <= 200_000; level++) {
+    const hp = linearPlayerMaxHp(level);
+    if (hp > 0 && maxDamage / hp < pct) return level;
+  }
+  return null;
+}
+
+/**
+ * Live `getEffectiveSpellRange`: `min(base + floor(level / 10), 5)`.
+ * `spellRangeBase` feeds `Math.max(1, Number(spell.range))`, so a stored
+ * range of 0 (self Heal / Mirror / Timestep) starts at 1.
+ */
+export function effectiveSpellRange(
+  baseRange: number,
+  level: number,
+  growthEvery = DEFAULT_LEVELUP_CONFIG.spellRangeGrowthLevels,
+  cap = DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+): number {
+  const every = Math.max(1, Math.floor(Number(growthEvery) || 10));
+  const maxR = Math.max(1, Math.floor(Number(cap) || 5));
+  const base = Math.max(1, Math.floor(Number(baseRange) || 0));
+  const bonus = Math.floor(Math.max(1, Math.floor(level)) / every);
+  return Math.min(base + bonus, maxR);
+}
+
+export function firstLevelSpellRangeHitsCap(
+  baseRange: number,
+  cap = DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+): number | null {
+  const maxR = Math.max(1, Math.floor(Number(cap) || 5));
+  for (let level = 1; level <= 200; level++) {
+    if (effectiveSpellRange(baseRange, level) >= maxR) return level;
+  }
+  return null;
+}
+
+/** Blood Mend `healAmount` (`spellData.ts` starter-heal). Upgrade +3% is not applied. */
+export const BLOOD_MEND_HEAL = 12;
+/** Life Drain self-heal (`spellData.ts` starter-drain). */
+export const LIFE_DRAIN_HEAL = 5;
+/** Blood Mend crit is ×2 on the flat amount (`spellEngine.ts` resolvePlayerCast). */
+export const BLOOD_MEND_CRIT_HEAL = BLOOD_MEND_HEAL * 2;
+/** Out-of-battle passive regen (`WorldExploration.tsx` +1 HP / 10s). */
+export const PASSIVE_REGEN_PER_TICK = 1;
+
+/** First level where `20 - (L-1)*0.1` hits 0 (`DEFAULT_LEVELUP_CONFIG`). */
+export function firstLevelSpellFailHitsZero(limit = 1000): number | null {
+  for (let level = 1; level <= limit; level++) {
+    if (spellFailChance(level) <= 0) return level;
+  }
+  return null;
 }
 
 export function monteCarloEnemyLevels(
@@ -458,6 +2066,85 @@ export function runLongHorizonSim() {
       stackedXpTruncated: stackedVoidBoost > APPLY_REWARDS_MAX_XP_DELTA,
       jackpotUnclampedMean: jackpotUnclampedMean(Math.round(meanEnemy)),
       jackpotPersistIfHit: jackpotPersistIfHit(Math.round(meanEnemy)),
+      persistApCap: maxPersistedAp(level, AP_EVERY),
+      pPlayerWinsInitiative3: monteCarloPlayerWinsInitiative(level),
+      lavaMaxOverHp: HAZARD_LAVA_MAX / linearPlayerMaxHp(level),
+      spikeMaxOverHp: HAZARD_SPIKE_MAX / linearPlayerMaxHp(level),
+      poisonTickOverHp: POISON_ARROW_TICK / linearPlayerMaxHp(level),
+      spellRangeStrike: effectiveSpellRange(1, level),
+      spellRangeFrost: effectiveSpellRange(3, level),
+      spellRangePoison: effectiveSpellRange(4, level),
+      bloodMendOverHp: BLOOD_MEND_HEAL / linearPlayerMaxHp(level),
+      lifeDrainHealOverHp: LIFE_DRAIN_HEAL / linearPlayerMaxHp(level),
+      potion30OverHp: 0.3,
+      crushOverFrost: crushOverKitRatio(
+        Math.round(meanEnemy),
+        KIT_FROST_DAMAGE,
+      ),
+      crushOverStrike: crushOverKitRatio(
+        Math.round(meanEnemy),
+        KIT_STRIKE_DAMAGE,
+      ),
+      regenSecondsToFull: passiveRegenSecondsToFull(level),
+      frostRaw: playerFrostRaw(0),
+      frostCastsFormulaAp: playerFrostCastsPerTurn(formulaAp(level)),
+      frostCastsPersistAp: playerFrostCastsPerTurn(
+        maxPersistedAp(level, AP_EVERY),
+      ),
+      frostTurnsVsMeanEnemy: dist
+        ? playerFrostTurnsToKill(Math.round(meanEnemy), level)
+        : null,
+      frostTurnsVsMeanEnemyPersistAp: dist
+        ? playerFrostTurnsToKill(
+            Math.round(meanEnemy),
+            level,
+            0,
+            maxPersistedAp(level, AP_EVERY),
+          )
+        : null,
+      frostTurnsVsCap1020: playerFrostTurnsToKill(1020, level),
+      crushVsHunter: fallbackCrushVsSummon(Math.round(meanEnemy)),
+      groundDokaMean: dist
+        ? groundDokaMean(Math.round(meanEnemy))
+        : groundDokaMean(level),
+      shrineOverGround: dist
+        ? SHRINE_DOKA / groundDokaMean(Math.round(meanEnemy))
+        : SHRINE_DOKA / groundDokaMean(level),
+      bossRushEnemyLevel: bossRushEnemyLevel(level),
+      bossRushCombatHp: bossRushCombatHp(level),
+      bossRushCrushRaw: fallbackCrushRaw(bossRushEnemyLevel(level)),
+      bossRushEnragedCrushRecv: damageAfterPlayerResPasses(
+        fallbackCrushRaw(bossRushEnemyLevel(level)) * BETRAYAL_ENRAGE_MULT,
+      ),
+      bossRushEnragedOneShots:
+        damageAfterPlayerResPasses(
+          fallbackCrushRaw(bossRushEnemyLevel(level)) * BETRAYAL_ENRAGE_MULT,
+        ) >= linearPlayerMaxHp(level),
+      bossRushRoomDoka: bossRushRoomDoka(level),
+      bossRushRoomXp: bossRushRoomXp(level),
+      frostTurnsVsBossRush: playerFrostTurnsToKill(
+        bossRushEnemyLevel(level),
+        level,
+      ),
+      formulaMpCoversCenterToCorner:
+        formulaMp(level) >= BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      overlayEnemyApAtMean: dist
+        ? overlayEnemyAp(Math.round(meanEnemy))
+        : overlayEnemyAp(level),
+      overlayEnemyMpAtMean: dist
+        ? overlayEnemyMp(Math.round(meanEnemy))
+        : overlayEnemyMp(level),
+      overlayEnemyAtkAtMean: dist
+        ? overlayEnemyAtk(Math.round(meanEnemy))
+        : overlayEnemyAtk(level),
+      overlayHardcodedRes: INITIATIVE_OVERLAY_ENEMY_RES,
+      overlayHardcodedChc: INITIATIVE_OVERLAY_ENEMY_CHC,
+      worldBossOverlayAp: overlayEnemyAp(worldBossEnemyLevel(level)),
+      frostCastsWithTimestep: frostCastsWithTimestepRefill(formulaAp(level)),
+      summonCastsFormulaAp: playerSummonCastsPerTurn(formulaAp(level)),
+      summonMaxInit: playerSummonStatBounds(level).init.max,
+      summonMaxRes: playerSummonStatBounds(level).res.max,
+      summonCatalogHp: catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
     };
   });
 
@@ -473,6 +2160,9 @@ export function runLongHorizonSim() {
   );
   const srBreakpoints = Object.fromEntries(
     PIECES.map((p) => [p, firstLevelSrCanHit100(p)]),
+  );
+  const chcBreakpoints = Object.fromEntries(
+    PIECES.map((p) => [p, firstLevelChcCanHit100(p)]),
   );
 
   const sampleStats = getEnemyBaseStats(80, "rook", "sim-rook-80");
@@ -528,7 +2218,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-02T00:06:35.128Z",
+    generatedAt: "2026-10-28T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -557,12 +2247,175 @@ export function runLongHorizonSim() {
       firstSpellLevelCostExceedsMaxSafe: firstSpellLevelCostExceeds(
         Number.MAX_SAFE_INTEGER,
       ),
+      maxPersistedAp: MAX_PERSISTED_AP,
+      playerCreateInit: PLAYER_CREATE_INIT,
+      saveBattleStatsCannotRaiseInit: true,
+      firstLevelFormulaApExceedsPersistCap:
+        firstLevelFormulaApExceedsPersistCap(),
+      firstLevelLavaMaxBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.01,
+      ),
+      firstLevelLavaMaxBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.05,
+      ),
+      firstLevelSpellRange1HitsCap: firstLevelSpellRangeHitsCap(1),
+      firstLevelSpellRange3HitsCap: firstLevelSpellRangeHitsCap(3),
+      firstLevelSpellRange4HitsCap: firstLevelSpellRangeHitsCap(4),
+      maxSpellRange: DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+      firstLevelSpellFailHitsZero: firstLevelSpellFailHitsZero(),
+      firstLevelBloodMendBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_HEAL,
+        0.05,
+      ),
+      firstLevelBloodMendBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_HEAL,
+        0.01,
+      ),
+      firstLevelBloodMendCritBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_CRIT_HEAL,
+        0.05,
+      ),
+      betrayalEnrageMult: BETRAYAL_ENRAGE_MULT,
+      firstEnemyLevelEnragedCrushOneShotsPlayer1:
+        firstEnemyLevelEnragedCrushOneShots(1),
+      firstEnemyLevelEnragedCrushOneShotsPlayer10:
+        firstEnemyLevelEnragedCrushOneShots(10),
+      firstPlayerLevelSurvivesEnragedCrushAt1020:
+        firstPlayerLevelSurvivesCrushRecv(
+          damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+        ),
+      firstEnemyLevelCrushExceedsShieldCharm:
+        firstEnemyLevelCrushExceedsShield(),
+      healthPotionCost: HEALTH_POTION_COST,
+      greaterPotionCost: GREATER_POTION_COST,
+      deathDokaLostOnMaxGameKey: deathDokaLost(MAX_DOKA_GRANT),
+      firstEnemyLevelCrushExceedsFrost:
+        firstEnemyLevelCrushExceedsKit(KIT_FROST_DAMAGE),
+      firstEnemyLevelCrushExceedsStrike:
+        firstEnemyLevelCrushExceedsKit(KIT_STRIKE_DAMAGE),
+      crushOverFrostAt1020: crushOverKitRatio(1020, KIT_FROST_DAMAGE),
+      crushOverStrikeAt1020: crushOverKitRatio(1020, KIT_STRIKE_DAMAGE),
+      kitFrostRaw: kitCastRaw(KIT_FROST_DAMAGE),
+      kitStrikeRaw: kitCastRaw(KIT_STRIKE_DAMAGE),
+      kitInfernoDirectDamage: KIT_INFERNO_DIRECT_DAMAGE,
+      regenSecondsToFullAt1: passiveRegenSecondsToFull(1),
+      regenSecondsToFullAt1000: passiveRegenSecondsToFull(1000),
+      regenSecondsToFullAt100000: passiveRegenSecondsToFull(100_000),
+      playerCreateSp: PLAYER_CREATE_SP,
+      playerFrostRaw: playerFrostRaw(0),
+      playerFrostRawSpell14: playerFrostRaw(14),
+      frostApCost: FROST_AP_COST,
+      frostCastsAt1: playerFrostCastsPerTurn(formulaAp(1)),
+      frostCastsAt1000: playerFrostCastsPerTurn(formulaAp(1000)),
+      frostCastsAt1000PersistAp: playerFrostCastsPerTurn(
+        maxPersistedAp(1000, AP_EVERY),
+      ),
+      frostTurnsVs1020At1: playerFrostTurnsToKill(1020, 1),
+      frostTurnsVs1020At1000: playerFrostTurnsToKill(1020, 1000),
+      frostTurnsVs1020At1000PersistAp: playerFrostTurnsToKill(
+        1020,
+        1000,
+        0,
+        maxPersistedAp(1000, AP_EVERY),
+      ),
+      frostTurnsVs1020At10000: playerFrostTurnsToKill(1020, 10_000),
+      firstEnemyLevelFrost10TurnsAtAp8: firstEnemyLevelFrostTurnsAtLeast(
+        10,
+        1,
+        0,
+        formulaAp(1),
+      ),
+      hunterSummonCatalogHp: catalogSummonMaxHp(
+        "hunter",
+        SUMMON_HUNTER_HP_SCALE,
+      ),
+      archerSummonCatalogHp: catalogSummonMaxHp(
+        "archer",
+        SUMMON_ARCHER_HP_SCALE,
+      ),
+      bomberSummonCatalogHp: catalogSummonMaxHp(
+        "bomber",
+        SUMMON_BOMBER_HP_SCALE,
+      ),
+      guardianSummonCatalogHp: catalogSummonMaxHp(
+        "guardian",
+        SUMMON_GUARDIAN_HP_SCALE,
+      ),
+      firstEnemyLevelCrushOneShotsHunter: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
+      ),
+      firstEnemyLevelCrushOneShotsArcher: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("archer", SUMMON_ARCHER_HP_SCALE),
+      ),
+      firstEnemyLevelCrushOneShotsBomber: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("bomber", SUMMON_BOMBER_HP_SCALE),
+      ),
+      firstEnemyLevelCrushOneShotsGuardian:
+        firstEnemyLevelCrushOneShotsSummonHp(
+          catalogSummonMaxHp("guardian", SUMMON_GUARDIAN_HP_SCALE),
+        ),
+      shrineDoka: SHRINE_DOKA,
+      dungeonCompleteAtDepth5: dungeonChainCompletionBonus(5),
+      groundDokaMeanAt1: groundDokaMean(1),
+      groundDokaMeanAt148: groundDokaMean(148),
+      groundDokaMeanAt1020: groundDokaMean(1020),
+      firstEnemyLevelGroundDokaExceedsShrine:
+        firstEnemyLevelGroundDokaExceedsShrine(),
+      bossRushLevelOffset: BOSS_RUSH_LEVEL_OFFSET,
+      overworldEnemyLevelCap: OVERWORLD_ENEMY_LEVEL_CAP,
+      catalogBossHpSample: CATALOG_BOSS_HP_SAMPLE,
+      firstPlayerLevelBossRushHpExceedsCatalog:
+        firstPlayerLevelBossRushHpExceedsCatalog(),
+      firstPlayerLevelBossRushCrushOneShots:
+        firstPlayerLevelBossRushCrushOneShots(1),
+      firstPlayerLevelBossRushEnragedCrushOneShots:
+        firstPlayerLevelBossRushCrushOneShots(BETRAYAL_ENRAGE_MULT),
+      firstPlayerLevelBossRushRoom0DokaExceedsCatalog:
+        firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+          BOSS_RUSH_ROOM0_CATALOG_DOKA,
+        ),
+      firstPlayerLevelBossRushRoom9DokaExceedsCatalog:
+        firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+          BOSS_RUSH_ROOM9_CATALOG_DOKA,
+        ),
+      firstPlayerLevelBossRushRoomDokaHitsClamp:
+        firstPlayerLevelBossRushRoomDokaHitsClamp(),
+      firstPlayerLevelBossRushRoomXpHitsClamp:
+        firstPlayerLevelBossRushRoomXpHitsClamp(),
+      bossRushKitFallbackIsPawn: kitForPieceName("Pale Archbishop", 0).join(
+        ",",
+      ),
+      battleGridSize: WORLD_GRID_SIZE,
+      battleGridCenterToCornerManhattan: BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      battleGridManhattanDiameter: BATTLE_GRID_MANHATTAN_DIAMETER,
+      firstLevelMpCoversCenterToCorner: firstLevelFormulaMpAtLeast(
+        BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      ),
+      firstLevelMpCoversDiameter: firstLevelFormulaMpAtLeast(
+        BATTLE_GRID_MANHATTAN_DIAMETER,
+      ),
+      overlayEnemyApAt1020: overlayEnemyAp(1020),
+      overlayHardcodedEnemyChc: INITIATIVE_OVERLAY_ENEMY_CHC,
+      overlayHardcodedEnemyRes: INITIATIVE_OVERLAY_ENEMY_RES,
+      firstEnemyLevelOverlayApExceedsPlayerAp1:
+        firstEnemyLevelOverlayApExceedsPlayerFormulaAp(1),
+      firstEnemyLevelCrushExceedsCritFrost:
+        firstEnemyLevelCrushExceedsCritKit(KIT_FROST_DAMAGE),
+      playerCreateEvasion: PLAYER_CREATE_EVASION,
+      playerCreateResilience: PLAYER_CREATE_RESILIENCE,
+      playerCreateSr: PLAYER_CREATE_SR,
+      combatReadsEvasion: false,
+      incomingEnemySpellUsesPlayerSpAsSr: true,
+      firstLevelLinearHpNotSafeInteger: firstLevelLinearHpNotSafeInteger(),
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
     aiRows,
     resBreakpoints,
     srBreakpoints,
+    chcBreakpoints,
     sampleRookStatsAt80: sampleStats,
     kitsNumeric,
     kitsLiveCallSite,
@@ -572,6 +2425,890 @@ export function runLongHorizonSim() {
     applyXpAt1019,
     updateCharacterApCap: 20,
     saveBattleStatsLevelUnconstrained: false,
+    fallbackMelee: {
+      playerCreateRes: PLAYER_CREATE_RES,
+      crushBase: FALLBACK_CRUSH_BASE,
+      firstEnemyLevelCrushOneShotsPlayer1:
+        firstEnemyLevelFallbackCrushOneShots(1),
+      firstEnemyLevelCrushOneShotsPlayer10:
+        firstEnemyLevelFallbackCrushOneShots(10),
+      crushRawAt80: fallbackCrushRaw(80),
+      crushRecvAt80: damageAfterPlayerResPasses(fallbackCrushRaw(80)),
+      crushRawAt1020: fallbackCrushRaw(1020),
+      crushRecvAt1020: damageAfterPlayerResPasses(fallbackCrushRaw(1020)),
+      firstLevelExponentialHpNotJsonSafe: firstLevelExponentialHpNotJsonSafe(),
+      player1MaxEnemyOneShots:
+        damageAfterPlayerResPasses(fallbackCrushRaw(80)) >=
+        linearPlayerMaxHp(1),
+    },
+    flatHazards: {
+      lavaMin: HAZARD_LAVA_MIN,
+      lavaMax: HAZARD_LAVA_MAX,
+      spikeMin: HAZARD_SPIKE_MIN,
+      spikeMax: HAZARD_SPIKE_MAX,
+      lavaBurnPerTurn: HAZARD_LAVA_BURN_PER_TURN,
+      poisonTick: POISON_ARROW_TICK,
+      firstLevelLavaMaxBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.05,
+      ),
+      firstLevelLavaMaxBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.01,
+      ),
+      lavaMaxOverHpAt1: HAZARD_LAVA_MAX / linearPlayerMaxHp(1),
+      lavaMaxOverHpAt100: HAZARD_LAVA_MAX / linearPlayerMaxHp(100),
+      lavaMaxOverHpAt1000: HAZARD_LAVA_MAX / linearPlayerMaxHp(1000),
+      lavaMaxOverHpAt100000: HAZARD_LAVA_MAX / linearPlayerMaxHp(100_000),
+    },
+    spellRangeCap: {
+      maxSpellRange: DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+      growthEvery: DEFAULT_LEVELUP_CONFIG.spellRangeGrowthLevels,
+      firstLevelRange1HitsCap: firstLevelSpellRangeHitsCap(1),
+      firstLevelRange3HitsCap: firstLevelSpellRangeHitsCap(3),
+      firstLevelRange4HitsCap: firstLevelSpellRangeHitsCap(4),
+      range0Becomes1ThenCapsAt: firstLevelSpellRangeHitsCap(0),
+      allStarterRangesAtCapBy: firstLevelSpellRangeHitsCap(1),
+    },
+    flatHeals: {
+      bloodMend: BLOOD_MEND_HEAL,
+      bloodMendCrit: BLOOD_MEND_CRIT_HEAL,
+      lifeDrain: LIFE_DRAIN_HEAL,
+      passiveRegenPerTick: PASSIVE_REGEN_PER_TICK,
+      firstLevelBloodMendBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_HEAL,
+        0.05,
+      ),
+      firstLevelBloodMendBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_HEAL,
+        0.01,
+      ),
+      firstLevelBloodMendCritBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_CRIT_HEAL,
+        0.05,
+      ),
+      firstLevelLifeDrainBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        LIFE_DRAIN_HEAL,
+        0.05,
+      ),
+      bloodMendOverHpAt1: BLOOD_MEND_HEAL / linearPlayerMaxHp(1),
+      bloodMendOverHpAt100: BLOOD_MEND_HEAL / linearPlayerMaxHp(100),
+      bloodMendOverHpAt1000: BLOOD_MEND_HEAL / linearPlayerMaxHp(1000),
+      bloodMendOverHpAt100000: BLOOD_MEND_HEAL / linearPlayerMaxHp(100_000),
+      shopPotionScalesWithMaxHp: true,
+    },
+    spellFail: {
+      baseChance: DEFAULT_LEVELUP_CONFIG.spellFailBaseChance,
+      reductionPerLevel: DEFAULT_LEVELUP_CONFIG.spellFailReductionPerLevel,
+      firstLevelHitsZero: firstLevelSpellFailHitsZero(),
+      chanceAt15: spellFailChance(15),
+      chanceAt101: spellFailChance(101),
+      chanceAt201: spellFailChance(201),
+      physicalBypassesFail: true,
+    },
+    betrayalEnrage: {
+      mult: BETRAYAL_ENRAGE_MULT,
+      crushRawAt80: fallbackCrushRawEnraged(80),
+      crushRecvAt80: damageAfterPlayerResPasses(fallbackCrushRawEnraged(80)),
+      crushRawAt1020: fallbackCrushRawEnraged(1020),
+      crushRecvAt1020: damageAfterPlayerResPasses(
+        fallbackCrushRawEnraged(1020),
+      ),
+      firstEnemyLevelOneShotsPlayer1: firstEnemyLevelEnragedCrushOneShots(1),
+      firstEnemyLevelOneShotsPlayer10: firstEnemyLevelEnragedCrushOneShots(10),
+      firstPlayerLevelSurvivesAt1020: firstPlayerLevelSurvivesCrushRecv(
+        damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+      ),
+      enemyHpAt1020Enraged: linearEnemyMaxHp(1020) * BETRAYAL_ENRAGE_MULT,
+      hunterSummonHp: SUMMON_HUNTER_HP,
+      guardianSummonHp: SUMMON_GUARDIAN_HP,
+      bomberSummonHp: SUMMON_BOMBER_HP,
+      crushVsHunterAt80: fallbackCrushVsSummon(80),
+      crushVsGuardianAt80: fallbackCrushVsSummon(80),
+      enragedCrushVsGuardianAt80:
+        fallbackCrushVsSummon(80) * BETRAYAL_ENRAGE_MULT,
+    },
+    buffShop: {
+      shieldAbsorb: SHIELD_CHARM_ABSORB,
+      firstEnemyLevelCrushExceedsShield: firstEnemyLevelCrushExceedsShield(),
+      healthPotionCost: HEALTH_POTION_COST,
+      greaterPotionCost: GREATER_POTION_COST,
+      healthPotionHpAt1: healthPotionHpRestored(1),
+      healthPotionHpAt100: healthPotionHpRestored(100),
+      healthPotionHpAt1000: healthPotionHpRestored(1000),
+      healthPotionHpAt100000: healthPotionHpRestored(100_000),
+      healthPotionDokaPerHpAt1: healthPotionDokaPerHp(1),
+      healthPotionDokaPerHpAt100: healthPotionDokaPerHp(100),
+      healthPotionDokaPerHpAt1000: healthPotionDokaPerHp(1000),
+      healthPotionDokaPerHpAt100000: healthPotionDokaPerHp(100_000),
+      greaterPotionHpAt1: greaterPotionHpRestored(1),
+      jackpotsToBuyHealthPotion: Math.floor(
+        APPLY_REWARDS_MAX_DOKA_DELTA / HEALTH_POTION_COST,
+      ),
+      deathDokaLostOnMaxGameKey: deathDokaLost(MAX_DOKA_GRANT),
+      deathDokaRate: DEATH_DOKA_PENALTY_RATE,
+    },
+    kitVsCrush: {
+      strike: KIT_STRIKE_DAMAGE,
+      frost: KIT_FROST_DAMAGE,
+      infernoDirect: KIT_INFERNO_DIRECT_DAMAGE,
+      calcScaledDamageIgnoresCasterLevel: true,
+      pickBestDamageSpellRequiresDamageGt0: true,
+      kitStrikeRaw: kitCastRaw(KIT_STRIKE_DAMAGE),
+      kitFrostRaw: kitCastRaw(KIT_FROST_DAMAGE),
+      firstEnemyLevelCrushExceedsFrost:
+        firstEnemyLevelCrushExceedsKit(KIT_FROST_DAMAGE),
+      firstEnemyLevelCrushExceedsStrike:
+        firstEnemyLevelCrushExceedsKit(KIT_STRIKE_DAMAGE),
+      crushRawAt9: fallbackCrushRaw(9),
+      crushRawAt80: fallbackCrushRaw(80),
+      crushRawAt1020: fallbackCrushRaw(1020),
+      crushOverFrostAt9: crushOverKitRatio(9, KIT_FROST_DAMAGE),
+      crushOverFrostAt80: crushOverKitRatio(80, KIT_FROST_DAMAGE),
+      crushOverFrostAt1020: crushOverKitRatio(1020, KIT_FROST_DAMAGE),
+      crushOverStrikeAt1020: crushOverKitRatio(1020, KIT_STRIKE_DAMAGE),
+    },
+    passiveRegen: {
+      intervalMs: PASSIVE_REGEN_INTERVAL_MS,
+      hpPerTick: PASSIVE_REGEN_PER_TICK,
+      secondsToFullAt1: passiveRegenSecondsToFull(1),
+      secondsToFullAt10: passiveRegenSecondsToFull(10),
+      secondsToFullAt100: passiveRegenSecondsToFull(100),
+      secondsToFullAt1000: passiveRegenSecondsToFull(1000),
+      secondsToFullAt100000: passiveRegenSecondsToFull(100_000),
+    },
+    playerFrostTtk: {
+      createSp: PLAYER_CREATE_SP,
+      frostBase: PLAYER_FROST_BASE,
+      frostApCost: FROST_AP_COST,
+      frostRaw: playerFrostRaw(0),
+      frostRawSpell14: playerFrostRaw(14),
+      calcScaledDamageIgnoresCharacterLevel: true,
+      castsAt1: playerFrostCastsPerTurn(formulaAp(1)),
+      castsAt325: playerFrostCastsPerTurn(formulaAp(325)),
+      castsAt1000: playerFrostCastsPerTurn(formulaAp(1000)),
+      castsAt10000: playerFrostCastsPerTurn(formulaAp(10_000)),
+      castsAt1000Persist20: playerFrostCastsPerTurn(
+        maxPersistedAp(1000, AP_EVERY),
+      ),
+      turnsVs1020At1: playerFrostTurnsToKill(1020, 1),
+      turnsVs1020At100: playerFrostTurnsToKill(1020, 100),
+      turnsVs1020At1000: playerFrostTurnsToKill(1020, 1000),
+      turnsVs1020At10000: playerFrostTurnsToKill(1020, 10_000),
+      turnsVs1020At1000Persist20: playerFrostTurnsToKill(
+        1020,
+        1000,
+        0,
+        maxPersistedAp(1000, AP_EVERY),
+      ),
+      firstEnemyLevel10TurnsAtAp8: firstEnemyLevelFrostTurnsAtLeast(
+        10,
+        1,
+        0,
+        formulaAp(1),
+      ),
+    },
+    summonVsCrush: {
+      hunterHp: catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
+      archerHp: catalogSummonMaxHp("archer", SUMMON_ARCHER_HP_SCALE),
+      bomberHp: catalogSummonMaxHp("bomber", SUMMON_BOMBER_HP_SCALE),
+      guardianHp: catalogSummonMaxHp("guardian", SUMMON_GUARDIAN_HP_SCALE),
+      wispHp: catalogSummonMaxHp("healer", SUMMON_WISP_HP_SCALE),
+      unitDefLevel: 1,
+      firstEnemyLevelHunter: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
+      ),
+      firstEnemyLevelArcher: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("archer", SUMMON_ARCHER_HP_SCALE),
+      ),
+      firstEnemyLevelBomber: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("bomber", SUMMON_BOMBER_HP_SCALE),
+      ),
+      firstEnemyLevelGuardian: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("guardian", SUMMON_GUARDIAN_HP_SCALE),
+      ),
+      crushVsHunterAt44: fallbackCrushVsSummon(44),
+      crushVsHunterAt1020: fallbackCrushVsSummon(1020),
+      summonerChanceAt44: Math.min(1, summonerChance(44)),
+    },
+    secondaryDoka: {
+      shrine: SHRINE_DOKA,
+      dungeonCompleteAtDepth5: dungeonChainCompletionBonus(5),
+      groundMeanAt1: groundDokaMean(1),
+      groundMeanAt148: groundDokaMean(148),
+      groundMeanAt1020: groundDokaMean(1020),
+      firstEnemyLevelGroundExceedsShrine:
+        firstEnemyLevelGroundDokaExceedsShrine(),
+    },
+    bossRushUncapped: {
+      levelOffset: BOSS_RUSH_LEVEL_OFFSET,
+      overworldCap: OVERWORLD_ENEMY_LEVEL_CAP,
+      catalogHpSample: CATALOG_BOSS_HP_SAMPLE,
+      spawnPlaceholderHp: 100,
+      combatHpUsesLinearEnemyHp: true,
+      kitFallbackPiece: "pawn",
+      kitAtDisplayName: kitForPieceName("Pale Archbishop", 0),
+      pawnKitZone0: kitForZoneInput("pawn", 0),
+      hpAt1: bossRushCombatHp(1),
+      hpAt120: bossRushCombatHp(120),
+      hpAt1000: bossRushCombatHp(1000),
+      hpAt10000: bossRushCombatHp(10_000),
+      hpAt100000: bossRushCombatHp(100_000),
+      crushRawAt1000: fallbackCrushRaw(bossRushEnemyLevel(1000)),
+      crushRawAt10000: fallbackCrushRaw(bossRushEnemyLevel(10_000)),
+      crushRawAt100000: fallbackCrushRaw(bossRushEnemyLevel(100_000)),
+      enragedRecvAt1000: damageAfterPlayerResPasses(
+        fallbackCrushRaw(bossRushEnemyLevel(1000)) * BETRAYAL_ENRAGE_MULT,
+      ),
+      enragedRecvAt10000: damageAfterPlayerResPasses(
+        fallbackCrushRaw(bossRushEnemyLevel(10_000)) * BETRAYAL_ENRAGE_MULT,
+      ),
+      enragedRecvAt100000: damageAfterPlayerResPasses(
+        fallbackCrushRaw(bossRushEnemyLevel(100_000)) * BETRAYAL_ENRAGE_MULT,
+      ),
+      firstPlayerLevelUnenragedOneShot:
+        firstPlayerLevelBossRushCrushOneShots(1),
+      firstPlayerLevelEnragedOneShot:
+        firstPlayerLevelBossRushCrushOneShots(BETRAYAL_ENRAGE_MULT),
+      firstPlayerLevelHpExceedsCatalog350:
+        firstPlayerLevelBossRushHpExceedsCatalog(),
+      frostTurnsAt1: playerFrostTurnsToKill(bossRushEnemyLevel(1), 1),
+      frostTurnsAt1000: playerFrostTurnsToKill(bossRushEnemyLevel(1000), 1000),
+      frostTurnsAt10000: playerFrostTurnsToKill(
+        bossRushEnemyLevel(10_000),
+        10_000,
+      ),
+      frostTurnsAt100000: playerFrostTurnsToKill(
+        bossRushEnemyLevel(100_000),
+        100_000,
+      ),
+      room0CatalogDoka: BOSS_RUSH_ROOM0_CATALOG_DOKA,
+      room9CatalogDoka: BOSS_RUSH_ROOM9_CATALOG_DOKA,
+      liveDokaAt1: bossRushRoomDoka(1),
+      liveDokaAt167: bossRushRoomDoka(167),
+      liveDokaAt1000: bossRushRoomDoka(1000),
+      liveDokaAt100000: bossRushRoomDoka(100_000),
+      liveXpAt1: bossRushRoomXp(1),
+      liveXpAt1000: bossRushRoomXp(1000),
+      liveXpAt100000: bossRushRoomXp(100_000),
+      firstPlayerLevelRoom0DokaExceedsCatalog:
+        firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+          BOSS_RUSH_ROOM0_CATALOG_DOKA,
+        ),
+      firstPlayerLevelRoom9DokaExceedsCatalog:
+        firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+          BOSS_RUSH_ROOM9_CATALOG_DOKA,
+        ),
+      firstPlayerLevelDokaHitsClamp:
+        firstPlayerLevelBossRushRoomDokaHitsClamp(),
+      firstPlayerLevelXpHitsClamp: firstPlayerLevelBossRushRoomXpHitsClamp(),
+      completeBossRushRoomIgnoresClientRewards: true,
+    },
+    battleMpVsGrid: {
+      gridSize: WORLD_GRID_SIZE,
+      centerToCornerManhattan: BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      diameterManhattan: BATTLE_GRID_MANHATTAN_DIAMETER,
+      walkIsFourDir: true,
+      mpAt1: formulaMp(1),
+      mpAt100: formulaMp(100),
+      mpAt300: formulaMp(300),
+      mpAt400: formulaMp(400),
+      mpAt10000: formulaMp(10_000),
+      mpAt100000: formulaMp(100_000),
+      persistMpCap: MAX_PERSISTED_AP,
+      firstLevelCoversCenterToCorner: firstLevelFormulaMpAtLeast(
+        BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      ),
+      firstLevelCoversDiameter: firstLevelFormulaMpAtLeast(
+        BATTLE_GRID_MANHATTAN_DIAMETER,
+      ),
+    },
+    catalogWorldBossStatsScale: {
+      levelOffset: WORLD_BOSS_LEVEL_OFFSET,
+      catalogHpSample: CATALOG_BOSS_HP_SAMPLE,
+      spawnResClamp: WORLD_BOSS_SPAWN_RES_CLAMP,
+      battleStartOverwritesCatalogRes: true,
+      combatHpUsesCatalogBaseStats: true,
+      paleArchbishopPiece: "bishop",
+      rookTypedPiece: "rook",
+      firstPlayerLevelRookRes100: firstPlayerLevelWorldBossStatCanHit100(
+        "rook",
+        "res",
+      ),
+      firstPlayerLevelBishopChc100: firstPlayerLevelWorldBossStatCanHit100(
+        "bishop",
+        "chc",
+      ),
+      firstPlayerLevelBishopRes100: firstPlayerLevelWorldBossStatCanHit100(
+        "bishop",
+        "res",
+      ),
+      optimisticFrostTurnsAt1: playerFrostTurnsToKillHp(
+        CATALOG_BOSS_HP_SAMPLE,
+        1,
+      ),
+      optimisticFrostTurnsAt73: playerFrostTurnsToKillHp(
+        CATALOG_BOSS_HP_SAMPLE,
+        73,
+      ),
+      chip1FrostTurnsAt73: worldBossChip1FrostTurns(73),
+      chip1FrostTurnsAt1000: worldBossChip1FrostTurns(1000),
+      chip1FrostTurnsAt10000: worldBossChip1FrostTurns(10_000),
+      chip1FrostTurnsAt100000: worldBossChip1FrostTurns(100_000),
+    },
+    dokaHealVsLinearHp: {
+      hpPerDoka: DOKA_HEAL_HP_PER_DOKA,
+      costFromOneAt1: dokaHealCostToFillFrom(1, 1),
+      costFromOneAt1000: dokaHealCostToFillFrom(1, 1000),
+      costFromOneAt50000: dokaHealCostToFillFrom(1, 50_000),
+      costFromOneAt100000: dokaHealCostToFillFrom(1, 100_000),
+      firstPlayerLevelFromOneExceedsCombatClamp:
+        firstPlayerLevelDokaHealFromOneExceeds(APPLY_REWARDS_MAX_DOKA_DELTA),
+      firstPlayerLevelPotionBeatsFlat50Doka:
+        firstPlayerLevelPotionBeatsFlatDokaHeal(),
+      potionHpAt1: healthPotionHpRestored(1),
+      flat50DokaHp: DOKA_HEAL_HP_PER_DOKA * HEALTH_POTION_COST,
+    },
+    initiativeOverlayLevelAsAp: {
+      formula: "ap=level, mp=floor(level/2), atk=level*2",
+      hardcodedRes: INITIATIVE_OVERLAY_ENEMY_RES,
+      hardcodedSp: INITIATIVE_OVERLAY_ENEMY_SP,
+      hardcodedChc: INITIATIVE_OVERLAY_ENEMY_CHC,
+      hidesBattleStartResChc: true,
+      aiStillOneActionPerTurn: true,
+      apAt1: overlayEnemyAp(1),
+      apAt9: overlayEnemyAp(9),
+      apAt78: overlayEnemyAp(78),
+      apAt1020: overlayEnemyAp(1020),
+      apAt100005: overlayEnemyAp(100_005),
+      mpAt1020: overlayEnemyMp(1020),
+      atkAt1020: overlayEnemyAtk(1020),
+      firstEnemyLevelApExceedsPlayerAp1:
+        firstEnemyLevelOverlayApExceedsPlayerFormulaAp(1),
+      worldBossOverlayApAt73: overlayEnemyAp(worldBossEnemyLevel(73)),
+      worldBossOverlayApAt100000: overlayEnemyAp(worldBossEnemyLevel(100_000)),
+      crushExceedsCritFrostAt:
+        firstEnemyLevelCrushExceedsCritKit(KIT_FROST_DAMAGE),
+      critFrostRaw: kitCastRaw(KIT_FROST_DAMAGE) * 2,
+    },
+    unusedCreateDefenses: {
+      evasion: PLAYER_CREATE_EVASION,
+      resilience: PLAYER_CREATE_RESILIENCE,
+      sr: PLAYER_CREATE_SR,
+      chc: PLAYER_CREATE_CHC,
+      saveBattleStatsWritesEvasion: false,
+      saveBattleStatsWritesResilience: false,
+      saveBattleStatsWritesSr: false,
+      saveBattleStatsWritesChc: false,
+      combatReadsEvasion: false,
+      combatReadsResilience: false,
+      combatReadsPlayerSr: false,
+      incomingEnemySpellUsesPlayerSpAsSr: true,
+      critRollSubtractsEvasion: false,
+      firstLevelLinearHpNotSafeInteger: firstLevelLinearHpNotSafeInteger(),
+    },
+    familyCombatIdentity: {
+      variantChance: FAMILY_VARIANT_CHANCE_SIM,
+      families: FAMILY_TYPES,
+      catalogResIsFractionNotPercent: true,
+      ironGolemCatalogRes: familyCatalogRes("iron_golem"),
+      plagueRatCatalogRes: familyCatalogRes("plague_rat"),
+      ironGolemCatalogSpRes: familyCatalogSpRes("iron_golem"),
+      spawnHpAt1020: spawnPlaceholderHp(1020),
+      ironGolemSpawnHpAt1020: familySpawnHp(1020, "iron_golem"),
+      plagueRatSpawnHpAt1020: familySpawnHp(1020, "plague_rat"),
+      combatHpAt1020: linearEnemyMaxHp(1020),
+      ironGolemSpawnOverCombatAt1020:
+        familySpawnHp(1020, "iron_golem") / linearEnemyMaxHp(1020),
+      battleStartOverwritesHpToLinear: true,
+      battleStartOverwritesResSpInitChc: true,
+      combatReadsFamilyRes: false,
+      combatReadsFamilyHpMult: false,
+    },
+    dungeonPostCapBoost: {
+      overworldPickMaxLevel: overworldPickMaxLevel(),
+      dungeonDepthCap: DUNGEON_SPAWN_DEPTH_CAP,
+      dungeonTierBoostAtDepth5: dungeonSpawnExtras(DUNGEON_SPAWN_DEPTH_CAP)
+        .tierBoost,
+      dungeonMaxEnemyLevel: dungeonMaxEnemyLevel(),
+      firstStressLevelFullyUnderDungeonCap:
+        firstStressLevelFullyUnderDungeonCap(),
+      player1000CanStillRollDungeonAbove: dungeonMaxEnemyLevel() > 1000,
+      player2500DungeonMax: dungeonMaxEnemyLevel(),
+    },
+    battleApFrostDump: {
+      starterFrostCooldownTurns: starterFrostCooldownTurns(),
+      frostApCost: FROST_AP_COST,
+      persistCastsAt20: playerFrostCastsPerTurn(MAX_PERSISTED_AP),
+      formulaCastsAt1: playerFrostCastsPerTurn(formulaAp(1)),
+      formulaCastsAt325: playerFrostCastsPerTurn(formulaAp(325)),
+      formulaCastsAt1000: playerFrostCastsPerTurn(formulaAp(1000)),
+      formulaCastsAt2500: playerFrostCastsPerTurn(formulaAp(2500)),
+      formulaCastsAt10000: playerFrostCastsPerTurn(formulaAp(10_000)),
+      formulaCastsAt100000: playerFrostCastsPerTurn(formulaAp(100_000)),
+      formulaApAt100000: formulaAp(100_000),
+      firstLevelFormulaCastsExceedPersist: firstLevelFormulaFrostCastsAtLeast(
+        playerFrostCastsPerTurn(MAX_PERSISTED_AP) + 1,
+      ),
+      firstLevel100FormulaCasts: firstLevelFormulaFrostCastsAtLeast(100),
+      aiStillOneActionPerTurn: true,
+      starterTimestepCooldownTurns: starterTimestepCooldownTurns(),
+      starterTimestepApCost: starterTimestepApCost(),
+      starterTimestepIsOncePerBattle: starterTimestepIsOncePerBattle(),
+      timestepRestoresFormulaAp: true,
+      frostCastsWithTimestepAt325: frostCastsWithTimestepRefill(formulaAp(325)),
+      frostCastsWithTimestepAt100000: frostCastsWithTimestepRefill(
+        formulaAp(100_000),
+      ),
+      firstLevelTimestep100FormulaCasts:
+        firstLevelTimestepFrostCastsAtLeast(100),
+    },
+    playerSummonDump: {
+      direWolfApCost: starterDireWolfApCost(),
+      direWolfCooldownTurns: starterDireWolfCooldownTurns(),
+      playerSummonCap: PLAYER_SUMMON_CAP_LIVE,
+      enemySummonCap: ENEMY_SUMMON_CAP_SIM,
+      maxEnemiesOverworld: MAX_ENEMIES_SIM,
+      battleGridCells: BATTLE_GRID_CELL_COUNT,
+      castsAt1: playerSummonCastsPerTurn(formulaAp(1)),
+      castsAt325: playerSummonCastsPerTurn(formulaAp(325)),
+      castsAt1000: playerSummonCastsPerTurn(formulaAp(1000)),
+      castsAt2500: playerSummonCastsPerTurn(formulaAp(2500)),
+      castsAt10000: playerSummonCastsPerTurn(formulaAp(10_000)),
+      castsAt100000: playerSummonCastsPerTurn(formulaAp(100_000)),
+      firstLevelCastsExceedEnemyCap: firstLevelFormulaSummonCastsAtLeast(
+        ENEMY_SUMMON_CAP_SIM + 1,
+      ),
+      firstLevelCastsExceedMaxEnemies: firstLevelFormulaSummonCastsAtLeast(
+        MAX_ENEMIES_SIM + 1,
+      ),
+      firstLevelCastsFillGrid: firstLevelFormulaSummonCastsAtLeast(
+        BATTLE_GRID_CELL_COUNT,
+      ),
+      spawnUsesCharacterLevelForComputeEnemyStats: true,
+      pieceTypeFallsBackToKing: true,
+      hpUsesSpellLevelNotCharacterLevel: true,
+      hunterCatalogHp: catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
+      firstPlayerLevelSummonMaxInitExceedsCreate:
+        firstPlayerLevelSummonMaxInitExceedsCreate(),
+      firstPlayerLevelSummonRes100: firstPlayerLevelSummonResCanHit100(),
+      summonMaxInitAt1: playerSummonStatBounds(1).init.max,
+      summonMaxInitAt1000: playerSummonStatBounds(1000).init.max,
+      summonMaxInitAt2500: playerSummonStatBounds(2500).init.max,
+      summonMaxResAt107: playerSummonStatBounds(107).res.max,
+      capPackKingMaxInitAt1000: enemyStatBounds(1000, "king").init.max,
+    },
+    mendingMistDeadHook: {
+      regenFraction: MENDING_MIST_REGEN_FRACTION,
+      playerTurnStartCommitsHp: PLAYER_TURN_START_COMMITS_MENDING_MIST,
+      enemyTurnStartCommitsStoreHp:
+        ENEMY_TURN_START_COMMITS_MENDING_MIST_TO_STORE,
+      playerAbsentFromCombatantsRef: !playerCombatantsRefHasPlayerEntry([
+        { id: "rat-1" },
+      ]),
+      regenAt1: mendingMistRegenAtPlayerLevel(1),
+      regenAt1000: mendingMistRegenAtPlayerLevel(1000),
+      regenAt100000: mendingMistRegenAtPlayerLevel(100_000),
+      unenragedCrushRecvAt1020: damageAfterPlayerResPasses(
+        fallbackCrushRaw(1020),
+      ),
+      enragedCrushRecvAt1020: damageAfterPlayerResPasses(
+        fallbackCrushRawEnraged(1020),
+      ),
+      firstPlayerLevelRegenExceedsUnenraged1020Crush:
+        firstPlayerLevelMistRegenExceeds(
+          damageAfterPlayerResPasses(fallbackCrushRaw(1020)),
+        ),
+      firstPlayerLevelRegenExceedsEnraged1020Crush:
+        firstPlayerLevelMistRegenExceeds(
+          damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+        ),
+    },
+    sacrificeHpScaling: {
+      id: SACRIFICE_ID,
+      hpFraction: SACRIFICE_HP_FRACTION,
+      damageMult: SACRIFICE_DAMAGE_MULT,
+      apCost: starterSacrificeApCost(),
+      cooldownTurns: starterSacrificeCooldownTurns(),
+      catalogIsPhysical: starterSacrificeIsPhysical(),
+      dealDamageAppliesEnemyResOnce: true,
+      rawAt1: sacrificeRawAtFullHp(1),
+      rawAt10: sacrificeRawAtFullHp(10),
+      rawAt855: sacrificeRawAtFullHp(855),
+      rawAt1000: sacrificeRawAtFullHp(1000),
+      rawAt100000: sacrificeRawAtFullHp(100_000),
+      frostRawAt0: playerFrostRaw(0),
+      exceedsFrostAtCreate: sacrificeRawAtFullHp(1) > playerFrostRaw(0),
+      dungeonCapHp: linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      firstPlayerLevelRawOneShotsDungeonCap:
+        firstPlayerLevelSacrificeRawExceeds(
+          linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+        ),
+      chip1AtRes100: sacrificeDamageAfterEnemyRes(
+        sacrificeRawAtFullHp(855),
+        100,
+      ),
+      rookRes100At: firstLevelResCanHit100("rook"),
+      rawOneShotIsAfterRookRes100: true,
+    },
+    arcaneSurgeFrostDump: {
+      apDiscount: ARCANE_SURGE_AP_DISCOUNT,
+      frostCostAfterSurge: arcaneSurgeApCost(FROST_AP_COST),
+      minCost: 1,
+      timestepCostAfterSurge: arcaneSurgeApCost(starterTimestepApCost()),
+      formulaCastsAt325: playerFrostCastsPerTurnWithArcaneSurge(formulaAp(325)),
+      formulaCastsAt100000: playerFrostCastsPerTurnWithArcaneSurge(
+        formulaAp(100_000),
+      ),
+      timestepCastsAt325: frostCastsWithTimestepAndArcaneSurge(formulaAp(325)),
+      timestepCastsAt100000: frostCastsWithTimestepAndArcaneSurge(
+        formulaAp(100_000),
+      ),
+      firstLevel100FormulaCasts: firstLevelArcaneSurgeFrostCastsAtLeast(100),
+      firstLevel100TimestepCasts: firstLevelArcaneSurgeFrostCastsAtLeast(50),
+    },
+    stackedArcaneFrostDump: {
+      overflowApDiscount: ARCANE_OVERFLOW_AP_DISCOUNT,
+      frostCostAfterStack: stackedArcaneDiscountApCost(FROST_AP_COST),
+      timestepCostAfterStack: stackedArcaneDiscountApCost(
+        starterTimestepApCost(),
+      ),
+      twoRollCanPairSurgeAndOverflow: true,
+      formulaCastsAt325: playerFrostCastsPerTurnWithStackedArcane(
+        formulaAp(325),
+      ),
+      formulaCastsAt100000: playerFrostCastsPerTurnWithStackedArcane(
+        formulaAp(100_000),
+      ),
+      timestepCastsAt325: frostCastsWithTimestepAndStackedArcane(
+        formulaAp(325),
+      ),
+      timestepCastsAt100000: frostCastsWithTimestepAndStackedArcane(
+        formulaAp(100_000),
+      ),
+      firstLevel100FormulaCasts: firstLevelStackedArcaneFrostCastsAtLeast(100),
+      firstLevel100TimestepCasts: firstLevelStackedArcaneFrostCastsAtLeast(50),
+    },
+    titansVigorAsymmetric: {
+      hpBonus: TITANS_VIGOR_HP_BONUS,
+      dmgMin: TITANS_VIGOR_DMG_MIN,
+      dmgMax: TITANS_VIGOR_DMG_MAX,
+      glassMult: GLASS_REALM_DMG_MULT,
+      playerInBattleStartCombatantsRef: BATTLE_START_PLAYER_IN_COMBATANTS_REF,
+      playerTakesDamageRunsApplyDamageDealt:
+        PLAYER_TAKES_DAMAGE_RUNS_APPLY_DAMAGE_DEALT,
+      enemyHpAt1: linearEnemyMaxHp(1),
+      enemyHpAt1WithTitans: titansVigorHp(linearEnemyMaxHp(1)),
+      enemyHpAt1030: linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      enemyHpAt1030WithTitans: titansVigorHp(
+        linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      ),
+      chip1: 1,
+      chip1TitansMax: titansMaxChip1(),
+      chip1Glass: glassChip1(),
+      chip1TitansGlassMax: titansGlassMaxChip1(),
+      frostDumpChip1At100000: playerFrostCastsPerTurn(formulaAp(100_000)),
+      frostDumpTitansMaxAt100000:
+        playerFrostCastsPerTurn(formulaAp(100_000)) * titansMaxChip1(),
+      firstLevelTitansMaxDumpExceedsDungeonCap:
+        firstLevelFrostDumpWithMultExceeds(
+          linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+          TITANS_VIGOR_DMG_MAX,
+        ),
+      firstLevelGlassDumpExceedsDungeonCap: firstLevelFrostDumpWithMultExceeds(
+        linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+        GLASS_REALM_DMG_MULT,
+      ),
+      firstLevelTitansGlassDumpExceedsDungeonCap:
+        firstLevelFrostDumpWithMultExceeds(
+          linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+          TITANS_VIGOR_DMG_MAX * GLASS_REALM_DMG_MULT,
+        ),
+    },
+    dokaFeverHpNoOp: {
+      hpBonusFraction: DOKA_FEVER_HP_BONUS_FRACTION,
+      rewardMult: DOKA_FEVER_REWARD_MULT,
+      overworldSpawnSetsSide: OVERWORLD_SPAWN_SETS_SIDE,
+      overworldSpawnSetsIsEnemy: OVERWORLD_SPAWN_SETS_IS_ENEMY,
+      appliesOnMissingSide: dokaFeverAppliesHpBonus({}),
+      appliesOnEnemySide: dokaFeverAppliesHpBonus({ side: "enemy" }),
+      appliesOnIsEnemyTrue: dokaFeverAppliesHpBonus({ isEnemy: true }),
+      bonusIfEligibleAt1: dokaFeverHpBonus(linearEnemyMaxHp(1)),
+      bonusIfEligibleAt1030: dokaFeverHpBonus(
+        linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      ),
+      rewardHookStillDoubles: true,
+    },
+    ironCurseEarlierChip1: {
+      resMult: IRON_CURSE_RES_MULT,
+      playerInBattleStartCombatantsRef: BATTLE_START_PLAYER_IN_COMBATANTS_REF,
+      rookRes100Uncursed: firstLevelResCanHit100("rook"),
+      rookRes100Cursed: firstLevelIronCursedResCanHit100("rook"),
+      kingRes100Uncursed: firstLevelResCanHit100("king"),
+      kingRes100Cursed: firstLevelIronCursedResCanHit100("king"),
+      cursedRookMaxAtUncursedBreakpoint: ironCursedRes(
+        enemyStatBounds(firstLevelResCanHit100("rook") ?? 78, "rook").res.max,
+      ),
+      chip1AfterRes100: damageAfterResThenMapMods(20, 130, 1),
+    },
+    summonMeleePlayerLevel: {
+      spawnSetsAtk: SUMMON_SPAWN_SETS_ATK,
+      spawnCopiesKitOntoSpells: SUMMON_SPAWN_COPIES_KIT_ONTO_SPELLS,
+      meleeAt1: summonMeleeRaw(1),
+      meleeAt44: summonMeleeRaw(44),
+      meleeAt1000: summonMeleeRaw(1000),
+      meleeAt2448: summonMeleeRaw(2448),
+      meleeAt2622: summonMeleeRaw(2622),
+      meleeAt100000: summonMeleeRaw(100_000),
+      capCrushRawAt1020: fallbackCrushRaw(1020),
+      dungeonCapHp: linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+      firstPlayerLevelMeleeExceedsCapCrush: firstPlayerLevelSummonMeleeExceeds(
+        fallbackCrushRaw(1020),
+      ),
+      firstPlayerLevelMeleeOneShotsDungeonCap:
+        firstPlayerLevelSummonMeleeExceeds(
+          linearEnemyMaxHp(dungeonMaxEnemyLevel()),
+        ),
+      playerHpAt2448: linearPlayerMaxHp(2448),
+      summonerChanceAt44: Math.min(1, summonerChance(44)),
+      spawnUsesCharacterLevel: true,
+    },
+    vampiricThrowawayAttacker: {
+      lifestealFraction: VAMPIRIC_LIFESTEAL_FRACTION,
+      playerAttackerIsLiveStats: PLAYER_DAMAGE_DEALT_ATTACKER_IS_LIVE_STATS,
+      playerTakesDamageRunsApplyDamageDealt:
+        PLAYER_TAKES_DAMAGE_RUNS_APPLY_DAMAGE_DEALT,
+      healFromFrostRaw: vampiricHeal(playerFrostRaw(0)),
+      healFromChip1: vampiricHeal(1),
+      healFromTitansMaxChip1: vampiricHeal(titansMaxChip1()),
+      healFromGlassChip1: vampiricHeal(glassChip1()),
+      healFromTitansGlassMaxChip1: vampiricHeal(titansGlassMaxChip1()),
+      firstNonZeroHealOnChip1Mult: 7,
+    },
+    mirrorFieldPreResReflect: {
+      chance: MIRROR_FIELD_REFLECT_CHANCE,
+      fraction: MIRROR_FIELD_REFLECT_FRACTION,
+      cancelsHit: MIRROR_FIELD_CANCELS_HIT,
+      skipsPlayerTakesDamage: MIRROR_FIELD_SKIPS_PLAYER_TAKES_DAMAGE,
+      sacrificeUsesThisPath: SACRIFICE_USES_MIRROR_FIELD_REFLECT,
+      frostPreCritAt0: frostPreCritDmgBm(),
+      frostPlayerRawIncludesSp: playerFrostRaw(0),
+      reflectAt0: mirrorFieldReflect(frostPreCritDmgBm()),
+      reflectBloodMoon: mirrorFieldReflect(
+        frostPreCritDmgBm({ bloodMoon: true }),
+      ),
+      reflectBloodMoonFury: mirrorFieldReflect(
+        frostPreCritDmgBm({ bloodMoon: true, fury: true }),
+      ),
+      reflectCrit: mirrorFieldReflect(frostPreCritDmgBm({ crit: true })),
+      outgoingChip1AfterRes100: 1,
+      expectedSelfAt325: frostDumpMirrorFieldExpectedSelfDamage(formulaAp(325)),
+      expectedSelfAt100000: frostDumpMirrorFieldExpectedSelfDamage(
+        formulaAp(100_000),
+      ),
+      bloodMoonNoOpOnChip1: true,
+    },
+    voidMirrorFamilyReflect: {
+      familyId: VOID_MIRROR_FAMILY_ID,
+      fraction: VOID_MIRROR_REFLECT_FRACTION,
+      hitStillLands: VOID_MIRROR_HIT_STILL_LANDS,
+      skipsPlayerTakesDamage: VOID_MIRROR_SKIPS_PLAYER_TAKES_DAMAGE,
+      skipsShieldCharm: VOID_MIRROR_SKIPS_SHIELD_CHARM,
+      familyStringSurvivesBattleStartOverwrite:
+        FAMILY_STRING_SURVIVES_BATTLE_START_OVERWRITE,
+      familyVariantChance: FAMILY_VARIANT_CHANCE_SIM,
+      familyTypeCount: FAMILY_TYPE_COUNT,
+      pVoidMirror: voidMirrorFamilyChance(),
+      reflectAt0: voidMirrorReflect(frostPreCritDmgBm()),
+      reflectBloodMoonFury: voidMirrorReflect(
+        frostPreCritDmgBm({ bloodMoon: true, fury: true }),
+      ),
+      dumpAt1: frostDumpVoidMirrorSelfDamage(formulaAp(1)),
+      dumpAt325: frostDumpVoidMirrorSelfDamage(formulaAp(325)),
+      dumpAt100000: frostDumpVoidMirrorSelfDamage(formulaAp(100_000)),
+      firstLevelDumpExceedsUnder30: firstLevelFrostDumpSelfDamageExceeds(
+        voidMirrorReflect(frostPreCritDmgBm()),
+        30,
+      ),
+      tideShadeMpDebuff: TIDE_SHADE_MP_DEBUFF,
+      tideShadeMpDuration: TIDE_SHADE_MP_DURATION,
+      tideDebuffOverMpAt1: tideShadeMpDebuffOverFormulaMp(1),
+      tideDebuffOverMpAt100000: tideShadeMpDebuffOverFormulaMp(100_000),
+      firstLevelTideDebuffBelow5PctMp:
+        firstLevelTideShadeDebuffBelowMpPercent(0.05),
+      emberBurnTotal: EMBER_KNIGHT_BURN_TICK * EMBER_KNIGHT_BURN_DURATION,
+    },
+    timeWarpVsFrostDump: {
+      warpSeconds: TIME_WARP_TIMER_SECONDS,
+      normalSeconds: NORMAL_TURN_TIMER_SECONDS,
+      castsAt325: playerFrostCastsPerTurn(formulaAp(325)),
+      castsAt7300: playerFrostCastsPerTurn(formulaAp(7300)),
+      castsAt100000: playerFrostCastsPerTurn(formulaAp(100_000)),
+      stackedCastsAt100000: playerFrostCastsPerTurnWithStackedArcane(
+        formulaAp(100_000),
+      ),
+      castsPerWarpSecondAt325: frostCastsPerTimerSecond(
+        formulaAp(325),
+        TIME_WARP_TIMER_SECONDS,
+      ),
+      castsPerWarpSecondAt7300: frostCastsPerTimerSecond(
+        formulaAp(7300),
+        TIME_WARP_TIMER_SECONDS,
+      ),
+      castsPerWarpSecondAt100000: frostCastsPerTimerSecond(
+        formulaAp(100_000),
+        TIME_WARP_TIMER_SECONDS,
+      ),
+      firstLevel100FormulaCasts: firstLevelFormulaFrostCastsAtLeast(100),
+      timerRunsOnPlayerAndEnemyTurns: true,
+    },
+    paperWindstormMissAsymmetry: {
+      playerMissChance: PAPER_WINDSTORM_PLAYER_MISS_CHANCE,
+      enemyMissChanceIfRangeGt1:
+        PAPER_WINDSTORM_ENEMY_MISS_CHANCE_IF_RANGE_GT_1,
+      advertisedRangeReduction: PAPER_WINDSTORM_ADVERTISED_RANGE_REDUCTION,
+      rangeReductionApplied: PAPER_WINDSTORM_RANGE_REDUCTION_APPLIED,
+      crushRange: FALLBACK_CRUSH_RANGE,
+      fireboltRange: FALLBACK_FIREBOLT_RANGE,
+      crushMissChance: paperWindstormEnemyMissChance(FALLBACK_CRUSH_RANGE),
+      fireboltMissChance: paperWindstormEnemyMissChance(
+        FALLBACK_FIREBOLT_RANGE,
+      ),
+      expectedHitsAt325: frostDumpPaperWindstormExpectedHits(formulaAp(325)),
+      expectedMissesAt325: frostDumpPaperWindstormExpectedMisses(
+        formulaAp(325),
+      ),
+      expectedHitsAt100000: frostDumpPaperWindstormExpectedHits(
+        formulaAp(100_000),
+      ),
+      expectedMissesAt100000: frostDumpPaperWindstormExpectedMisses(
+        formulaAp(100_000),
+      ),
+      stackedExpectedHitsAt100000:
+        playerFrostCastsPerTurnWithStackedArcane(formulaAp(100_000)) *
+        (1 - PAPER_WINDSTORM_PLAYER_MISS_CHANCE),
+    },
+    chaosInitiativeVsInitFreeze: {
+      shufflesWhenIndexWrapsToZero:
+        CHAOS_INITIATIVE_SHUFFLES_WHEN_INDEX_WRAPS_TO_ZERO,
+      dispatchesBeforeShuffle: CHAOS_INITIATIVE_DISPATCHES_BEFORE_SHUFFLE,
+      pPlayerFirst3Pack: chaosInitiativePlayerFirstChance(4),
+      pPlayerFirst8Pack: chaosInitiativePlayerFirstChance(9),
+      pInitFirstAt1: monteCarloPlayerWinsInitiative(1),
+      pInitFirstAt250: monteCarloPlayerWinsInitiative(250),
+      playerCreateInit: PLAYER_CREATE_INIT,
+    },
+    starterShieldSkippedOnCrush: {
+      shieldId: STARTER_SHIELD_ID,
+      shieldResMult: starterShieldResMultiplier(),
+      createRes: PLAYER_CREATE_RES,
+      resIfShieldApplied: crushMeleeResIfShieldApplied(),
+      crushSkipsPlayerTakesDamage: CRUSH_MELEE_SKIPS_PLAYER_TAKES_DAMAGE,
+      crushUsesGetStatModifier: CRUSH_MELEE_USES_GET_STAT_MODIFIER,
+      firstEnemyCrushOneShotsPlayer1: firstEnemyLevelFallbackCrushOneShots(1),
+    },
+    slimeFrozenWalkMpVsGrid: {
+      costPlain: walkCostPerTile({}),
+      costSlime: walkCostPerTile({ slimeFlood: true }),
+      costFrozen: walkCostPerTile({ frozenTerrain: true }),
+      costStacked: walkCostPerTile({
+        slimeFlood: true,
+        frozenTerrain: true,
+      }),
+      gridTiles: WORLD_GRID_SIZE,
+      gridCostPlain: gridWalkMpCost({}),
+      gridCostDoubled: gridWalkMpCost({ slimeFlood: true }),
+      gridCostStacked: gridWalkMpCost({
+        slimeFlood: true,
+        frozenTerrain: true,
+      }),
+      firstLevelCoversPlain: firstLevelFormulaMpCoversGridWalk({}),
+      firstLevelCoversDoubled: firstLevelFormulaMpCoversGridWalk({
+        slimeFlood: true,
+      }),
+      firstLevelCoversStacked: firstLevelFormulaMpCoversGridWalk({
+        slimeFlood: true,
+        frozenTerrain: true,
+      }),
+      formulaMpAt1: formulaMp(1),
+      formulaMpAt300: formulaMp(300),
+      formulaMpAt700: formulaMp(700),
+      formulaMpAt1500: formulaMp(1500),
+      formulaMpAt100000: formulaMp(100_000),
+      stackedCostOverMpAt1:
+        walkCostPerTile({ slimeFlood: true, frozenTerrain: true }) /
+        formulaMp(1),
+      stackedCostOverMpAt1500:
+        walkCostPerTile({ slimeFlood: true, frozenTerrain: true }) /
+        formulaMp(1500),
+      stackedCostOverMpAt100000:
+        walkCostPerTile({ slimeFlood: true, frozenTerrain: true }) /
+        formulaMp(100_000),
+    },
+    thornedGroundWalkTax: {
+      liveDmgAt1: thornedWalkDamage(1),
+      liveDmgAt2: thornedWalkDamage(2),
+      liveDmgAt7: thornedWalkDamage(7),
+      liveDmgAt11: thornedWalkDamage(11),
+      registryDmgAt7: thornedRegistryHookDamage(7),
+      tilesForUnder30: thornedWalkTilesToDealAtLeast(30),
+      tilesForUnder50: thornedWalkTilesToDealAtLeast(50),
+      firstLevelUnder30Walk: firstLevelFormulaMpCoversThornWalk(30),
+      firstLevelUnder50Walk: firstLevelFormulaMpCoversThornWalk(50),
+      dmgAtFormulaMp1: thornedWalkDamageAtFormulaMp(1),
+      dmgAtFormulaMp75: thornedWalkDamageAtFormulaMp(75),
+      dmgAtFormulaMp100000: thornedWalkDamageAtFormulaMp(100_000),
+      gridMaxDamage: THORNED_WALK_GRID_MAX_DAMAGE,
+      gridMaxOverHpAt75: THORNED_WALK_GRID_MAX_DAMAGE / linearPlayerMaxHp(75),
+      gridMaxOverHpAt100000:
+        THORNED_WALK_GRID_MAX_DAMAGE / linearPlayerMaxHp(100_000),
+      enemyTakesThorn: false,
+    },
+    enemyWalkBudgetVsStackedCost: {
+      stepBudget: ENEMY_WALK_STEP_BUDGET_SIM,
+      tilesPlain: enemyWalkTilesInBudget({}),
+      tilesSlime: enemyWalkTilesInBudget({ slimeFlood: true }),
+      tilesFrozen: enemyWalkTilesInBudget({ frozenTerrain: true }),
+      tilesStacked: enemyWalkTilesInBudget({
+        slimeFlood: true,
+        frozenTerrain: true,
+      }),
+      playerTilesStackedAt1: Math.floor(
+        formulaMp(1) /
+          walkCostPerTile({ slimeFlood: true, frozenTerrain: true }),
+      ),
+      playerTilesStackedAt1500: Math.floor(
+        formulaMp(1500) /
+          walkCostPerTile({ slimeFlood: true, frozenTerrain: true }),
+      ),
+      playerTilesStackedAt100000: Math.floor(
+        formulaMp(100_000) /
+          walkCostPerTile({ slimeFlood: true, frozenTerrain: true }),
+      ),
+    },
+    swiftWindsNoOpOnLiveMp: {
+      advertisedBonus: SWIFT_WINDS_MP_BONUS_SIM,
+      reachesCurrentBattleMp: SWIFT_WINDS_REACHES_CURRENT_BATTLE_MP,
+      changesEnemyStepBudget: SWIFT_WINDS_CHANGES_ENEMY_STEP_BUDGET,
+      playerTurnStartFindsPlayer: playerTurnStartFindsPlayerIn([
+        { id: "enemy-1" },
+      ]),
+      battleStartPlayerInCombatantsRef: BATTLE_START_PLAYER_IN_COMBATANTS_REF,
+      formulaMpAt1: formulaMp(1),
+      bonusOverMpAt1: SWIFT_WINDS_MP_BONUS_SIM / formulaMp(1),
+      bonusOverMpAt100000: SWIFT_WINDS_MP_BONUS_SIM / formulaMp(100_000),
+    },
+    noopModifierSlotsAndPaintFamilies: {
+      poolSize: MAP_MODIFIER_POOL_SIZE,
+      noopIds: [...NOOP_MAP_MODIFIER_IDS],
+      firstPickChance: noopModifierFirstPickChance(),
+      familyTypeCount: FAMILY_TYPE_COUNT,
+      paintOnlyFamilies: [...FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE],
+      stringHookFamilies: [...FAMILIES_WITH_STRING_COMBAT_HOOKS],
+      paintOnlyChance: paintOnlyFamilyChance(),
+      stringIdentityChance: stringIdentityFamilyChance(),
+      familyVariantChance: FAMILY_VARIANT_CHANCE,
+    },
   };
 }
 
