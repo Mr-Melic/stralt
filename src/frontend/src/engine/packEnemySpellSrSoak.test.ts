@@ -42,10 +42,7 @@ function wxPackCastSoakBlock(): string {
   assert.ok(start >= 0, "live pack cast arm is present");
   const plSp = wx.indexOf("const plSpEff = isSummonTarget", start);
   assert.ok(plSp > start, "live pack cast still builds plSpEff");
-  const playerHit = wx.indexOf(
-    "actualDmg = playerTakesDamage(",
-    plSp,
-  );
+  const playerHit = wx.indexOf("actualDmg = playerTakesDamage(", plSp);
   assert.ok(playerHit > plSp, "player cast still ends in playerTakesDamage");
   const cooldown = wx.indexOf(
     "if (chosenSpell.cooldown && chosenSpell.cooldown > 0)",
@@ -58,7 +55,7 @@ function wxPackCastSoakBlock(): string {
 function wxBossKitDamageBlock(): string {
   const wx = wxSource();
   const start = wx.indexOf(
-    '// Damage / drain → playerTakesDamage (mirror WX 13520-13646).',
+    "// Damage / drain → playerTakesDamage (mirror WX 13520-13646).",
   );
   assert.ok(start >= 0, "live boss kit damage arm is present");
   const end = wx.indexOf(
@@ -114,7 +111,11 @@ describe("pack enemy cast SR soak (SP misread + double RES)", () => {
   it("live pack cast reads characterStats.sp; boss kit SR skip stays #1104 leftover", () => {
     const pack = wxPackCastSoakBlock();
     assert.ok(pack.includes("characterStats.sp"));
-    assert.ok(pack.includes('getStatModifier(\n                    "player",\n                    "sp"'));
+    assert.ok(
+      pack.includes(
+        'getStatModifier(\n                    "player",\n                    "sp"',
+      ),
+    );
     assert.ok(pack.includes("characterStats.res"));
     assert.equal(
       pack.includes("characterStats.sr"),
@@ -158,7 +159,11 @@ describe("pack enemy cast SR soak (SP misread + double RES)", () => {
     const next = executePackEnemySpellSrSoak(ready);
     assert.deepEqual(next, { damage: 10, hpAfter: 90, playerDied: false });
     assert.equal(
-      liveWxPackEnemySpellSoak(ready.rawDamage, ready.playerSp, ready.playerRes),
+      liveWxPackEnemySpellSoak(
+        ready.rawDamage,
+        ready.playerSp,
+        ready.playerRes,
+      ),
       20,
       "live SP 0 soak leaves 20 — advertised SR 50 is 10",
     );

@@ -127,12 +127,14 @@ export function canExecutePackEnemySpellSrSoak(
 ): boolean {
   if (args.targetIsPlayer !== true) return false;
   if (args.isSpell !== true) return false;
-  return packEnemySpellAdvertisedSoak(
-    args.rawDamage,
-    args.playerSr,
-    args.playerRes,
-    true,
-  ) > 0;
+  return (
+    packEnemySpellAdvertisedSoak(
+      args.rawDamage,
+      args.playerSr,
+      args.playerRes,
+      true,
+    ) > 0
+  );
 }
 
 /** Alias so decide and the cast restack cannot fork. */
