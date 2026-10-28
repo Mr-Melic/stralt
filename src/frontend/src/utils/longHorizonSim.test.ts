@@ -18,8 +18,11 @@ import {
   CRUSH_MELEE_USES_GET_STAT_MODIFIER,
   DOKA_HEAL_HP_PER_DOKA,
   ENEMY_SUMMON_CAP_SIM,
+  ENEMY_WALK_STEP_BUDGET_SIM,
   FALLBACK_CRUSH_RANGE,
   FALLBACK_FIREBOLT_RANGE,
+  FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE,
+  FAMILIES_WITH_STRING_COMBAT_HOOKS,
   GLASS_REALM_DMG_MULT,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
@@ -29,10 +32,12 @@ import {
   KIT_INFERNO_DIRECT_DAMAGE,
   KIT_STRIKE_DAMAGE,
   LIFE_DRAIN_HEAL,
+  MAP_MODIFIER_POOL_SIZE,
   MAX_ENEMIES_SIM,
   MIRROR_FIELD_CANCELS_HIT,
   MIRROR_FIELD_REFLECT_CHANCE,
   MIRROR_FIELD_SKIPS_PLAYER_TAKES_DAMAGE,
+  NOOP_MAP_MODIFIER_IDS,
   OVERWORLD_SPAWN_SETS_SIDE,
   PAPER_WINDSTORM_ADVERTISED_RANGE_REDUCTION,
   PAPER_WINDSTORM_PLAYER_MISS_CHANCE,
@@ -50,6 +55,10 @@ import {
   SUMMON_GUARDIAN_HP_SCALE,
   SUMMON_HUNTER_HP_SCALE,
   SUMMON_SPAWN_SETS_ATK,
+  SWIFT_WINDS_CHANGES_ENEMY_STEP_BUDGET,
+  SWIFT_WINDS_MP_BONUS_SIM,
+  SWIFT_WINDS_REACHES_CURRENT_BATTLE_MP,
+  THORNED_WALK_GRID_MAX_DAMAGE,
   TIDE_SHADE_MP_DEBUFF,
   TIME_WARP_TIMER_SECONDS,
   TITANS_VIGOR_DMG_MAX,
@@ -74,6 +83,7 @@ import {
   dokaHealCostToFillFrom,
   dungeonMaxEnemyLevel,
   effectiveSpellRange,
+  enemyWalkTilesInBudget,
   fallbackCrushRaw,
   fallbackCrushRawEnraged,
   familyCatalogRes,
@@ -96,6 +106,7 @@ import {
   firstLevelFormulaFrostCastsAtLeast,
   firstLevelFormulaMpAtLeast,
   firstLevelFormulaMpCoversGridWalk,
+  firstLevelFormulaMpCoversThornWalk,
   firstLevelFormulaSummonCastsAtLeast,
   firstLevelFrostDumpSelfDamageExceeds,
   firstLevelFrostDumpWithMultExceeds,
@@ -148,11 +159,13 @@ import {
   linearPlayerMaxHp,
   mendingMistRegenAtPlayerLevel,
   mirrorFieldReflect,
+  noopModifierFirstPickChance,
   officialStackedXp,
   overlayEnemyAp,
   overlayEnemyAtk,
   overlayEnemyMp,
   overworldPickMaxLevel,
+  paintOnlyFamilyChance,
   paperWindstormEnemyMissChance,
   passiveRegenSecondsToFull,
   playerCombatantsRefHasPlayerEntry,
@@ -164,6 +177,7 @@ import {
   playerFrostTurnsToKillHp,
   playerSummonCastsPerTurn,
   playerSummonStatBounds,
+  playerTurnStartFindsPlayerIn,
   runLongHorizonSim,
   sacrificeDamageAfterEnemyRes,
   sacrificeRawAtFullHp,
@@ -181,8 +195,13 @@ import {
   starterTimestepApCost,
   starterTimestepCooldownTurns,
   starterTimestepIsOncePerBattle,
+  stringIdentityFamilyChance,
   summonMeleeRaw,
   summonerChance,
+  thornedRegistryHookDamage,
+  thornedWalkDamage,
+  thornedWalkDamageAtFormulaMp,
+  thornedWalkTilesToDealAtLeast,
   tideShadeMpDebuffOverFormulaMp,
   titansGlassMaxChip1,
   titansMaxChip1,
@@ -818,5 +837,54 @@ assert.equal(formulaMp(1500), 64);
 assert.equal(report.slimeFrozenWalkMpVsGrid.costStacked, 4);
 assert.equal(report.slimeFrozenWalkMpVsGrid.firstLevelCoversStacked, 1500);
 assert.equal(report.slimeFrozenWalkMpVsGrid.firstLevelCoversPlain, 300);
+
+assert.equal(thornedWalkDamage(1), 0);
+assert.equal(thornedWalkDamage(2), 5);
+assert.equal(thornedWalkDamage(7), 30);
+assert.equal(thornedWalkDamage(11), 50);
+assert.equal(thornedRegistryHookDamage(7), 25);
+assert.equal(thornedWalkTilesToDealAtLeast(30), 7);
+assert.equal(thornedWalkTilesToDealAtLeast(50), 11);
+assert.equal(firstLevelFormulaMpCoversThornWalk(30), 75);
+assert.equal(firstLevelFormulaMpCoversThornWalk(50), 175);
+assert.equal(thornedWalkDamageAtFormulaMp(1), 15);
+assert.equal(thornedWalkDamageAtFormulaMp(75), 30);
+assert.equal(thornedWalkDamageAtFormulaMp(100_000), 145);
+assert.equal(THORNED_WALK_GRID_MAX_DAMAGE, 145);
+assert.equal(report.thornedGroundWalkTax.liveDmgAt7, 30);
+assert.equal(report.thornedGroundWalkTax.firstLevelUnder30Walk, 75);
+assert.equal(report.thornedGroundWalkTax.enemyTakesThorn, false);
+
+assert.equal(ENEMY_WALK_STEP_BUDGET_SIM, 3);
+assert.equal(enemyWalkTilesInBudget({}), 3);
+assert.equal(enemyWalkTilesInBudget({ slimeFlood: true }), 1);
+assert.equal(enemyWalkTilesInBudget({ frozenTerrain: true }), 1);
+assert.equal(
+  enemyWalkTilesInBudget({ slimeFlood: true, frozenTerrain: true }),
+  0,
+);
+assert.equal(report.enemyWalkBudgetVsStackedCost.tilesStacked, 0);
+assert.equal(report.enemyWalkBudgetVsStackedCost.playerTilesStackedAt1, 1);
+assert.equal(report.enemyWalkBudgetVsStackedCost.playerTilesStackedAt1500, 16);
+
+assert.equal(SWIFT_WINDS_MP_BONUS_SIM, 2);
+assert.equal(SWIFT_WINDS_REACHES_CURRENT_BATTLE_MP, false);
+assert.equal(SWIFT_WINDS_CHANGES_ENEMY_STEP_BUDGET, false);
+assert.equal(playerTurnStartFindsPlayerIn([{ id: "enemy-1" }]), false);
+assert.equal(playerTurnStartFindsPlayerIn([{ id: "player" }]), true);
+assert.equal(report.swiftWindsNoOpOnLiveMp.reachesCurrentBattleMp, false);
+
+assert.equal(MAP_MODIFIER_POOL_SIZE, 22);
+assert.deepEqual([...NOOP_MAP_MODIFIER_IDS], ["gravity_well", "fog_of_war"]);
+assert.equal(noopModifierFirstPickChance(), 2 / 22);
+assert.equal(FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE.length, 4);
+assert.equal(FAMILIES_WITH_STRING_COMBAT_HOOKS.length, 3);
+assert.equal(paintOnlyFamilyChance(), 0.3 * (4 / 7));
+assert.equal(stringIdentityFamilyChance(), 0.3 * (3 / 7));
+assert.equal(report.noopModifierSlotsAndPaintFamilies.poolSize, 22);
+assert.equal(
+  report.noopModifierSlotsAndPaintFamilies.paintOnlyChance,
+  0.3 * (4 / 7),
+);
 
 console.log("longHorizonSim.test: ok");

@@ -6,6 +6,7 @@
  */
 
 import {
+  ENEMY_REACHABLE_STEP_BUDGET,
   ENEMY_SUMMONER_CHANCE_BASE,
   ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE,
   ENEMY_SUMMON_CAP,
@@ -18,6 +19,9 @@ import {
   MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT,
   MAP_MODIFIER_NORMAL_TIMER,
   MAP_MODIFIER_PAPER_WINDSTORM_RANGE_REDUCTION,
+  MAP_MODIFIER_SWIFT_WINDS_MP_BONUS,
+  MAP_MODIFIER_THORN_DAMAGE_PER_TILE,
+  MAP_MODIFIER_THORN_THRESHOLD,
   MAP_MODIFIER_TIME_WARP_TIMER,
   MAP_MODIFIER_TITANS_VIGOR_HP_BONUS,
   MAP_MODIFIER_TITANS_VIGOR_MAX_MULTIPLIER,
@@ -31,7 +35,10 @@ import {
   WORLD_GRID_SIZE,
 } from "../data/gameConstants.ts";
 import { starterSpells } from "../data/spellData.ts";
-import { playerTurnStartModifierTarget } from "../engine/battleSetup.ts";
+import {
+  playerTurnStartModifierTarget,
+  thornedGroundWalkDamage,
+} from "../engine/battleSetup.ts";
 import {
   calcScaledDamage,
   computeAITier,
@@ -57,6 +64,7 @@ import {
   dungeonScaledEnemyLevel,
   dungeonSpawnExtras,
 } from "../engine/spawnPolicy.ts";
+import { EXISTING_MAP_MODIFIER_IDS } from "../engine/worldFeatures.ts";
 import type { ChessPieceType } from "../types/gameTypes.ts";
 import { DEFAULT_LEVELUP_CONFIG } from "../types/gameTypes.ts";
 import {
@@ -1705,6 +1713,131 @@ export function firstLevelFormulaMpCoversGridWalk(opts: {
   return firstLevelFormulaMpAtLeast(gridWalkMpCost(opts));
 }
 
+/**
+ * Live player walk (`battleSetup.thornedGroundWalkDamage`): 5 HP per extra
+ * tile after the first. Mouse and touch both call `applyBattleWalkHazards`.
+ * Enemy `computeReachable` never calls this helper.
+ */
+export function thornedWalkDamage(pathLength: number): number {
+  return thornedGroundWalkDamage(pathLength);
+}
+
+/**
+ * Registry `thorned_ground.onDamageDealt` (`pathLength > 2` then
+ * `(n-2)*5`). Walk hazards do not go through that hook — they use
+ * `thornedWalkDamage` instead. Kept so the split is observable.
+ */
+export function thornedRegistryHookDamage(pathLength: number): number {
+  const n = Math.max(0, Math.floor(Number(pathLength) || 0));
+  if (n <= MAP_MODIFIER_THORN_THRESHOLD) return 0;
+  return (
+    (n - MAP_MODIFIER_THORN_THRESHOLD) * MAP_MODIFIER_THORN_DAMAGE_PER_TILE
+  );
+}
+
+/** Tiles needed so live walk thorns deal at least `damage` HP. */
+export function thornedWalkTilesToDealAtLeast(damage: number): number {
+  const need = Math.max(0, Math.floor(Number(damage) || 0));
+  if (need <= 0) return 1;
+  return Math.ceil(need / MAP_MODIFIER_THORN_DAMAGE_PER_TILE) + 1;
+}
+
+export function firstLevelFormulaMpCoversThornWalk(
+  damage: number,
+  opts?: { slimeFlood?: boolean; frozenTerrain?: boolean },
+): number | null {
+  const tiles = thornedWalkTilesToDealAtLeast(damage);
+  return firstLevelFormulaMpAtLeast(tiles * walkCostPerTile(opts ?? {}));
+}
+
+export function thornedWalkDamageAtFormulaMp(
+  level: number,
+  opts?: { slimeFlood?: boolean; frozenTerrain?: boolean },
+): number {
+  const cost = walkCostPerTile(opts ?? {});
+  const tiles = cost > 0 ? Math.floor(formulaMp(level) / cost) : 0;
+  return thornedWalkDamage(Math.min(tiles, BATTLE_GRID_MANHATTAN_DIAMETER));
+}
+
+export const THORNED_WALK_GRID_MAX_DAMAGE = thornedWalkDamage(
+  BATTLE_GRID_MANHATTAN_DIAMETER,
+);
+
+/**
+ * AI BFS (`enemyAI.computeReachable`) stops when `steps + costPerTile`
+ * exceeds `ENEMY_REACHABLE_STEP_BUDGET` (3). That is not formula MP and
+ * does not grow with level. Stacked Slime+Frozen cost 4 → 0 tiles.
+ */
+export const ENEMY_WALK_STEP_BUDGET_SIM = ENEMY_REACHABLE_STEP_BUDGET;
+
+export function enemyWalkTilesInBudget(opts?: {
+  slimeFlood?: boolean;
+  frozenTerrain?: boolean;
+}): number {
+  const cost = walkCostPerTile(opts ?? {});
+  if (cost <= 0) return ENEMY_WALK_STEP_BUDGET_SIM;
+  return Math.floor(ENEMY_WALK_STEP_BUDGET_SIM / cost);
+}
+
+/**
+ * Swift Winds `onTurnStart` does `combatant.mp += 2` on the modifier
+ * target. Player turn-start then overwrites `currentBattleMp` from
+ * `getPlayerBaseStats` + `getStatModifier`. Player is not in
+ * `combatantsRef` (`playerTurnStartModifierTarget` misses). Enemy AI
+ * walk uses `ENEMY_REACHABLE_STEP_BUDGET`, not `combatant.mp`.
+ */
+export const SWIFT_WINDS_MP_BONUS_SIM = MAP_MODIFIER_SWIFT_WINDS_MP_BONUS;
+export const SWIFT_WINDS_REACHES_CURRENT_BATTLE_MP = false;
+export const SWIFT_WINDS_CHANGES_ENEMY_STEP_BUDGET = false;
+
+export function playerTurnStartFindsPlayerIn(
+  combatants: Array<{ id?: string }>,
+): boolean {
+  return playerTurnStartModifierTarget(combatants) !== undefined;
+}
+
+/** Registry ids whose WX flags are `_is*` and whose hooks are empty. */
+export const NOOP_MAP_MODIFIER_IDS = ["gravity_well", "fog_of_war"] as const;
+export const MAP_MODIFIER_POOL_SIZE = EXISTING_MAP_MODIFIER_IDS.length;
+
+export function noopModifierFirstPickChance(): number {
+  return NOOP_MAP_MODIFIER_IDS.length / Math.max(1, MAP_MODIFIER_POOL_SIZE);
+}
+
+/**
+ * Family STRING combat hooks that survive the 10-22-001 battle-start
+ * overwrite: ember_knight (WX melee burn), tide_shade (WX melee −1 MP),
+ * void_mirror (`castHelpers` 25% reflect). The other four families keep
+ * pixels + a catalog tag.
+ */
+export const FAMILIES_WITH_STRING_COMBAT_HOOKS = [
+  "ember_knight",
+  "tide_shade",
+  "void_mirror",
+] as const;
+export const FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE = [
+  "wraith_bishop",
+  "iron_golem",
+  "plague_rat",
+  "bone_scribe",
+] as const;
+
+export function paintOnlyFamilyChance(): number {
+  return (
+    FAMILY_VARIANT_CHANCE *
+    (FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE.length /
+      Math.max(1, FAMILY_TYPES.length))
+  );
+}
+
+export function stringIdentityFamilyChance(): number {
+  return (
+    FAMILY_VARIANT_CHANCE *
+    (FAMILIES_WITH_STRING_COMBAT_HOOKS.length /
+      Math.max(1, FAMILY_TYPES.length))
+  );
+}
+
 /** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
 export const HAZARD_LAVA_MIN = 8;
 export const HAZARD_LAVA_MAX = 15;
@@ -2085,7 +2218,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-10-26T00:20:00.000Z",
+    generatedAt: "2026-10-28T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -3111,6 +3244,70 @@ export function runLongHorizonSim() {
       stackedCostOverMpAt100000:
         walkCostPerTile({ slimeFlood: true, frozenTerrain: true }) /
         formulaMp(100_000),
+    },
+    thornedGroundWalkTax: {
+      liveDmgAt1: thornedWalkDamage(1),
+      liveDmgAt2: thornedWalkDamage(2),
+      liveDmgAt7: thornedWalkDamage(7),
+      liveDmgAt11: thornedWalkDamage(11),
+      registryDmgAt7: thornedRegistryHookDamage(7),
+      tilesForUnder30: thornedWalkTilesToDealAtLeast(30),
+      tilesForUnder50: thornedWalkTilesToDealAtLeast(50),
+      firstLevelUnder30Walk: firstLevelFormulaMpCoversThornWalk(30),
+      firstLevelUnder50Walk: firstLevelFormulaMpCoversThornWalk(50),
+      dmgAtFormulaMp1: thornedWalkDamageAtFormulaMp(1),
+      dmgAtFormulaMp75: thornedWalkDamageAtFormulaMp(75),
+      dmgAtFormulaMp100000: thornedWalkDamageAtFormulaMp(100_000),
+      gridMaxDamage: THORNED_WALK_GRID_MAX_DAMAGE,
+      gridMaxOverHpAt75: THORNED_WALK_GRID_MAX_DAMAGE / linearPlayerMaxHp(75),
+      gridMaxOverHpAt100000:
+        THORNED_WALK_GRID_MAX_DAMAGE / linearPlayerMaxHp(100_000),
+      enemyTakesThorn: false,
+    },
+    enemyWalkBudgetVsStackedCost: {
+      stepBudget: ENEMY_WALK_STEP_BUDGET_SIM,
+      tilesPlain: enemyWalkTilesInBudget({}),
+      tilesSlime: enemyWalkTilesInBudget({ slimeFlood: true }),
+      tilesFrozen: enemyWalkTilesInBudget({ frozenTerrain: true }),
+      tilesStacked: enemyWalkTilesInBudget({
+        slimeFlood: true,
+        frozenTerrain: true,
+      }),
+      playerTilesStackedAt1: Math.floor(
+        formulaMp(1) /
+          walkCostPerTile({ slimeFlood: true, frozenTerrain: true }),
+      ),
+      playerTilesStackedAt1500: Math.floor(
+        formulaMp(1500) /
+          walkCostPerTile({ slimeFlood: true, frozenTerrain: true }),
+      ),
+      playerTilesStackedAt100000: Math.floor(
+        formulaMp(100_000) /
+          walkCostPerTile({ slimeFlood: true, frozenTerrain: true }),
+      ),
+    },
+    swiftWindsNoOpOnLiveMp: {
+      advertisedBonus: SWIFT_WINDS_MP_BONUS_SIM,
+      reachesCurrentBattleMp: SWIFT_WINDS_REACHES_CURRENT_BATTLE_MP,
+      changesEnemyStepBudget: SWIFT_WINDS_CHANGES_ENEMY_STEP_BUDGET,
+      playerTurnStartFindsPlayer: playerTurnStartFindsPlayerIn([
+        { id: "enemy-1" },
+      ]),
+      battleStartPlayerInCombatantsRef: BATTLE_START_PLAYER_IN_COMBATANTS_REF,
+      formulaMpAt1: formulaMp(1),
+      bonusOverMpAt1: SWIFT_WINDS_MP_BONUS_SIM / formulaMp(1),
+      bonusOverMpAt100000: SWIFT_WINDS_MP_BONUS_SIM / formulaMp(100_000),
+    },
+    noopModifierSlotsAndPaintFamilies: {
+      poolSize: MAP_MODIFIER_POOL_SIZE,
+      noopIds: [...NOOP_MAP_MODIFIER_IDS],
+      firstPickChance: noopModifierFirstPickChance(),
+      familyTypeCount: FAMILY_TYPE_COUNT,
+      paintOnlyFamilies: [...FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE],
+      stringHookFamilies: [...FAMILIES_WITH_STRING_COMBAT_HOOKS],
+      paintOnlyChance: paintOnlyFamilyChance(),
+      stringIdentityChance: stringIdentityFamilyChance(),
+      familyVariantChance: FAMILY_VARIANT_CHANCE,
     },
   };
 }
