@@ -1,27 +1,28 @@
 # Stralt Master Roadmap
 
 **Director:** Stralt Master Technical Director (`0b92479e-a49e-11f1-a7d1-d6b4613131ce`)  
-**Run:** 2026-09-02 00:03 UTC (daily cron)  
-**This agent:** `bc-a7b3fff6-cf5d-40c4-9b9a-bfcde9471ba3`  
-**HEAD inspected:** `58302bc` — `Merge pull request #258` (GameKey shop)  
-**Prior director HEAD:** `dd275aa` (#182) at 2026-09-01 00:02 UTC  
+**Run:** 2026-10-28 00:04 UTC (daily cron)  
+**This agent:** `bc-a10d07cd-1edb-4ea7-a500-ff3c617d7329`  
+**HEAD inspected:** `0f5363f` — `Merge pull request #332` (accepted-challenge HUD) — **unchanged since 2026-09-03 00:28 UTC**  
+**Prior director:** unmerged [`#1186`](https://github.com/Mr-Melic/stralt/pull/1186) (`bc-149fb345-16c4-4e64-b793-853da4693811`, 2026-10-27). On `main`, this file is still the 2026-09-02 text.  
 **Gameplay / production code:** not modified.
 
-This file is the living prioritized roadmap. ACTION_ID records for this run live in [`ACTION_IDS_2026-09-02.md`](./ACTION_IDS_2026-09-02.md). Prior director ledger: [`ACTION_IDS_2026-09-01.md`](./ACTION_IDS_2026-09-01.md) (polluted by TBC/LHIPS concatenation — do not append). Dump yard: [`ACTION_IDS_2026-08-31.md`](./ACTION_IDS_2026-08-31.md). Process audit: [`QUALITY_AUDIT_2026-08-30.md`](./QUALITY_AUDIT_2026-08-30.md).
+This file is the living prioritized roadmap. ACTION_ID records for this run live in [`ACTION_IDS_2026-10-28.md`](./ACTION_IDS_2026-10-28.md). Close superseded director PRs **#338, #402, #448, #509, #569, #618, #666, #718, #783, #814, #870, #946, #998, #1074, #1124, and #1186** when this lands — do not merge all seventeen. Process audit on `main`: [`QUALITY_AUDIT_2026-08-30.md`](./QUALITY_AUDIT_2026-08-30.md). Unmerged weekly audit: [`#1106`](https://github.com/Mr-Melic/stralt/pull/1106) (2026-10-18→10-25). Dump yards: `ACTION_IDS_2026-08-31.md`, `ACTION_IDS_2026-09-01.md`, `ACTION_IDS_2026-09-02.md`, and the unmerged 09-21…10-27 ledgers. Do not append to those files.
 
 ## Evidence available this run
 
 | Source | Status |
 | :--- | :--- |
-| `AGENTS.md`, `README.md`, `DESIGN.md`, `docs/ARCHITECTURE.md` | Read |
-| Prior director roadmap (2026-09-01 00:02) | Read. Several P0 leftovers **landed**. Flock-halt **failed again**. |
-| Orchestrators 00:00 / 06:00 / 12:00 / 18:00 (09-01) | Read. Unique display items they asked for mostly merged. Persist/map/combat leftovers they held were merged anyway. |
-| Specialist reports (09-01) | Expansion, PX, long-horizon, telemetry balance/architecture/dashboard, spell admin, discovery, enemy/boss admin, world-encounter, visual assets, mechanic matrix, game feel, UX, admin UX/drift, dead-code, data-evolution, performance, enemy AI/elites/formations |
-| Open ACTION_IDs | Hundreds still `NEW` across dated producer files. Reuse; do not mint twins. |
-| Recent commits | `git log` `dd275aa` → `58302bc` (~62 merge commits; humans merged the 09-01 leftover queue **and** frozen surfaces) |
-| Open drafts | **#259** (P0 EOP). During this run the 00:00 flock opened **#260–#273** (and still launching). Docs-only PRs are the intended specialist output. **Hold gameplay:** #265 (WX reject floats), #272 (GameKey bindgen — restack after #259). |
-| Player telemetry | **Still none.** `longHorizonSim.telemetry.available === false`. TBC remains `WAITING_FOR_TELEMETRY`. No collectors in `src/backend`. |
-| Same-hour flock (this minute) | **41** automations launched ~00:00 UTC 2026-09-02, including implementers (Approved Game Design, map integrity, combat parity, adversarial QA, security, persist, economy, complexity reduction, admin, expansion, AI, feel, telemetry dashboard). |
+| `AGENTS.md`, `README.md`, `DESIGN.md`, `docs/ARCHITECTURE.md` | Read. `ARCHITECTURE.md` line 28 still says `check-limit = 4`; `mops.toml` is `5`. Stale docs, not a Motoko bug. |
+| Prior director roadmap (2026-10-27, unmerged #1186) + memories | Read. Halt-as-config asked again, including daytime cadences (MTD-2026-10-24-005). Humans still have not merged `main`. |
+| Specialist reports on `main` | Still the 08-30…09-02 set. Later catalogs live only on unmerged drafts. |
+| Unmerged 2026-10-27 specialist PRs | Full day `#1163`–`#1217` (**55** drafts). TBC `#1165` WAITING (sixteenth inspection of `0f5363f`; 0 collectors). Wave 19/20 catalogs `#1170/#1172/#1176/#1177/#1188/#1189/#1192/#1195/#1198`. WX extract `#1196`. Advertised-combat mill **16** `fix(combat)`. Map snaps `#1174/#1201/#1209/#1213`. Skip-wipe `#1215`. Admin `#1190`. |
+| Open ACTION_IDs | Reuse. Director index = this file + `ACTION_IDS_2026-10-28.md`. |
+| Recent commits | `git log` since 2026-09-03: **none** on `origin/main`. Last merge `#332`. |
+| Open drafts | GitHub search **886** at first count; **921** by stack-compat (`#1218`–`#1252`, **35** this hour). 10-27 flock opened **55** (`#1163`–`#1217`). |
+| Player telemetry | **Still none.** `longHorizonSim.telemetry.available === false`. No `recordTelemetry` / sidecar in `src/`. TBC stays `WAITING_FOR_TELEMETRY`. |
+| Same-hour flock | **52** automations this hour: **48 RUNNING**, **4 IDLE**, **0 ERROR**. Map guardian, AI, combat-parity, complexity, spell mechanics, spell discovery, boss, dungeon, expansion, critical hunter `1aa41c6c-a483`, persist auditor, world-content, invariants, security, TBC, telemetry dashboard are RUNNING. IDLE first complete snapshot (still **enabled**): Approved Design `fe5b679a`, docs sync `013ac98d`, contract guardian `4fba3a56`, admin implementer `3089f18d`. |
+| Weekly quality audit `#1106` | ENGINEERING corroboration through 10-25: 436 automation runs, 292 drafts, 0 merges, 0 closes. Classifies map/persist/combat/#62 paint as NEGATIVE_ROI. Agrees halt + do-not-merge-burst. No newer weekly audit covering 10-26/10-27. |
 
 **Evidence classes used below**
 
@@ -29,99 +30,92 @@ This file is the living prioritized roadmap. ACTION_ID records for this run live
 | :--- | :--- |
 | MEASURED PLAYER BEHAVIOUR | Live play counters. **None exist.** |
 | DESIGN INTERPRETATION | Product rules in this prompt + `AGENTS.md` / `DESIGN.md` / specialist design docs |
-| ENGINEERING EVIDENCE | Code on `58302bc`, tests, PR history, automation volume, GitHub #259 body (IC0503 trap) |
+| ENGINEERING EVIDENCE | Code on `0f5363f`, tests, open-PR mill, automation volume, hotspot call sites, `#1106` process audit |
 
 Telemetry is not allowed to set priority. Correlation is not causation. No CLEAR_POSITIVE_SIGNAL is claimed.
 
 ---
 
-## What changed since the 09-01 director run (do not rediscover)
+## What changed since the 10-27 director run (do not rediscover)
 
-The 09-01 run asked: halt the flock; merge #183; write the reward-trust ADR; ignore-client `writeLevel`; rebase #180 helpers; re-freeze WX / mapGen / targeting.
+`main` **did not move.** The 10-27 halt was ignored as dashboard config and **obeyed as human merge-stop**.
 
-**Integrity that landed (accept `main`; do not re-open):**
+| Fact | 10-27 director | This run |
+| :--- | :--- | :--- |
+| HEAD | `0f5363f` (54 days) | `0f5363f` (**55 days**) |
+| Open drafts | GraphQL 831 at first search; 844 by stack-compat; first hour `#1163`–`#1175` | GitHub search **886** at first count. 10-27 finished at `#1217`. This hour already `#1218`–`#1252` (**35** drafts; queue **921**) |
+| 10-21 … 10-26 mill | 56 + 58 + 52 + 63 + 65 + 55 = 349 | Still unmerged |
+| 10-27 implementer flock | 47 RUNNING; hold | **Did not hold.** Opened **55** PRs (`#1163`–`#1217`) **across the whole day** (00/04/06/08/12/16/18/20 UTC). 00:00 = 36; after 01:00 = **19** |
+| Director snapshots on the living files | 16 unmerged (#338…#1124 + #1186 in flight) | **17** unmerged once #1186 is counted. `main` still serves 09-02 |
+| #327 Striker | CONFLICTING, 55 days | CONFLICTING, **56 days**. Still the oldest open PR (`mergeable_state: dirty`) |
+| #331 destack | CONFLICTING | Still CONFLICTING (`dirty`) |
+| Caffeine 20260901 deploy | Unconfirmed; `.old` Aug-31 no-GameKey | Unchanged. Grep GameKey in `.old` = 0. Newest deployed snapshot still `pr259-tail-20260901.most` |
+| Reward-trust ADR | Missing | Still 0 `docs/**/*ADR*` |
+| Telemetry collectors | 0 | 0. TBC `#1165` correctly WAITING (sixteenth inspection). Tonight’s `#1232` is the **seventeenth** WAITING clone of this SHA |
+| 10-28 flock | n/a | **48 RUNNING** + 4 IDLE. **0 ERROR.** Same implementer UUIDs still **enabled**. First-hour drafts `#1218`–`#1252` (**35** already): advertised combat `#1220/#1231/#1238/#1252`, map snap `#1229`, skip-wipe `#1239`, WX extract `#1241`, TBC `#1232` (seventeenth WAITING), Wave 20/21 catalogs `#1244/#1235/#1237/#1248/#1251`. Admin implementer `3089f18d` is IDLE this snapshot (was RUNNING 10-27) — still enabled, not a halt |
+| Skip-wipe mill | ~100 titled skip remount | GitHub `skip remount` search = **115**. 10-27 added leftover-spell-level keep `#1215`. **Resumed tonight:** `#1239`. Mill standing; **active patch stream moved** to advertised combat |
+| Advertised / pack-enemy mill | Grew on 10-26 | **Dominant mill on 10-27.** Sixteen `fix(combat)` PRs. GitHub `advertised` search = **109** open before tonight. **Already continued:** `#1220/#1231/#1238` |
+| Soak mill | `#1079/#1084/#1097/#1100/#1136/#1142` | **Did not grow** on 10-27. Still no `applyHazardLanding` in `src/`. HOLD the six plus Swap `#541/#754` |
+| Map punches | 10-26 added four snaps | 10-27 added `#1174/#1201/#1209/#1213`. **Tonight:** `#1229` Raise Slab. Guardian RUNNING |
+| WX extracts | `#831/#842/#901/#961/#995/#1076/#1109` | Plus **`#1196`** battle-floor highlight. **Tonight:** `#1241` floor AO gradient. Complexity reduction RUNNING |
+| Pale Archivist / kit-HP tests | Continues | `#1164` Enthroned Void; `#1204/#1212` Eternal Pawn Slow; `#1216` Pale Archivist Glyph Trap; **tonight** `#1234` Enthroned Void AP Drain, `#1247` Final Pawn Strike. Test mill, not 13 P0s |
+| TBC WAITING clones | 15 dated reports (`#333`…`#1108`) | **17** dated reports (`#333`…`#1232`) |
 
-| Theme | Landed as |
-| :--- | :--- |
-| Death replay after portal / Doka-only credit | **#183** then **#255 / #256** (`resolvePendingDeathReplay` now applies unpaid 20/40 to the live snapshot; `cutConfirmed` blocks recut) |
-| Live Doka ref / rename / shop rollback helpers | **#180** stacked then persist audits — `writeLiveDoka` / `creditLiveDoka` / `beginRename` are on `main` |
-| `saveBattleStats` ignore client level | **IMPLEMENTED** — `main.mo` 2028–2032 `level = character.level` (MTD-2026-09-01-005) |
-| Bindgen summon fields | **#174** path — `backend.ts` now has `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef` (SDA-2026-09-01-002) |
-| Pacifist preview no longer mutates feat state | `getSpellRangeTiles` comment + no `applyHealBuffSideEffect` (MIMA-2026-09-01-003 preview half) |
-| Recap dismiss vs in-flight credit | WX passes `victoryPersistPendingRef` into `shouldIgnoreWorldInputDuringRecap` (MIMA-2026-09-01-004 partial) |
-| Controlled-summon dest occupancy / unseal | `applyControlledSummonWalk` → `resolveControlledSummonMoveDest` (`occupancy.ts` 358–388) — dest occupancy **yes**; hazard landing **no** |
-| Shop 60s auto-complete | **SUPERSEDED** — `processPendingPurchases` is a no-op; paid Doka is `redeemGameKey` (#258) |
-| Security shop proofs / Inf-HP summon / chat | #209 + later hardenings (`03644ac`, `3b9461a`) |
-| Oldest-first open-PR stack CI | **#257** |
-| Leftover walks / off-turn casts / CA islands | #243 #246 #250 class |
-| Admin spriteUrl honesty | orchestrator 18:00 — copy says stored, not rendered |
+**Integrity that remains landed on `main` (do not re-open):** death replay `#183/#255/#256`, live Doka helpers `#180`, ignore-client `writeLevel`, AP/MP cap `#322`, bindgen summon fields, Pacifist preview, recap-under-credit gate, GameKey product `#258` + EOP source `#259/#311/#324`, Frozen/Slime execute MP `#313/#318`, barrier-aware `isBattleWalkTileBlocked`, spawnPolicy extract `#287`, challenge HUD `#332`, Enemy Register lore `#328`, Caffeine import gates + stack-compat.
 
-**09-01 leftovers that are DONE:** MTD-2026-09-01-002 (#183), MTD-2026-09-01-003 (#180 helpers), MTD-2026-09-01-005 (`writeLevel`), AQA-005 (#173 stacked), SDA-2026-09-01-002 (bindgen summon fields).
+**10-27 leftovers that are NOT done:** halt (including 06/12/18); living director index on `main`; Caffeine deploy confirmation; ADR; `#327` restack; mapGen/WX freeze; Swap landing; kit-zone number; discovery persist; admin DVA; `saveKillCount`; 30% random AI tier; share-kit helper; skip-wipe helper; soak helper.
 
-**09-01 leftovers that are NOT done:**
+**New this run (not a rediscovery of 10-27):**
 
-| ID | Why still open |
-| :--- | :--- |
-| MTD-2026-08-31-001 / AQA-001 / AQA-002 | Flock repeated. **41** agents this hour. `996df6df` still not GetAutomation-visible. `1aa41c6c` still enabled. |
-| AQA-008 | Clamps **and** ignore-client level exist. **No written ADR.** |
-| AQA-006 / AQA-007 | mapGen 1,348 → **1,544**; WX 20,063 → **19,253** (shrank, but **49** WX commits since `dd275aa`; 198 since 08-24). Freeze still broken. |
-| MIMA-001 | Swap (`WX` 9436–9448) still copies coordinates; no `applyBattleWalkHazards`. |
-| MIMA-002 remainder | Occupancy/unseal landed; **no** lava/spike landing on summon walk (`occupancy.ts` 358; WX 10027–10031). |
-| MIMA-2026-09-01-001 | Frozen/Slime preview uses `applyMpCost`; execute still `path.length` (WX 10663 / 11278). |
-| MIMA-2026-09-01-002 | `findPath` (WX 4427–4493) still ignores `barrierTilesRef` and occupants. |
-| MTD-2026-08-31-003 | HP/death still dual-written. Do not start a large extract this hour. |
-| MTD-2026-08-31-004 | Design catalogs shipped (correct). Gameplay from those catalogs must stay frozen. Humans merged expansion-adjacent PRs (#185–#197 class) as docs; implementer flock is running **again**. |
-| AQA-012 / TBC-* | Still no counters. Dashboard specialist running with nothing to display. |
-| EXPANSION-PREREQ-A | `buildEnemyKit(enemy.pieceType, currentMap.levelZone)` still passes `{ name, minLevel, maxLevel }` (WX 12035, 4680–4684, 558). |
-| SDA-002 / 004 | `ownedSpells` is still starters ∪ filtered backend (`WX` 2371–2400). `shouldIncludeBackendSpellInLibrary` returns true whenever `usableByPlayer !== false` (`adminSafety.ts` 551–558). |
-| MTD-005…008 | `saveKillCount` still unused (`useSaveKillCount` has no UI caller); admin DVA not a canister workflow; 30% random AI tier unchanged (`combatMath.ts` 34–50). |
-
-**New P0 this run (not in 09-01 ledger):**
-
-Caffeine `install_code` onto populated canister `cwofb-yqaaa-aaaap-qp45q-cai` trapped `RTS error: Memory-incompatible program upgrade` / IC0503. Root cause: **#258 stuffed GameKey stables into already-shipped `20260831_000000.mo` `NewActor`**. Empty `.old` check-stable still passed. Draft **#259** restores the frozen 20260831 actor and adds `20260901_000000.mo`. Until #259 merges **and is deployed**, GameKey source and the live canister disagree. Do not add more persistent `let`/`var` on `main.mo`.
+1. **Seven recovered days in a row rebuilt the mill.** 10-21 opened 56; 10-22 opened 58; 10-23 opened 52; 10-24 opened 63; 10-25 opened 65; 10-26 opened 55; **10-27 opened 55**. Combined: **404 drafts in seven days**. Queue 482 → 538 → 596 → 648 → 711 → 776 → 831 → 844 → **886** → **921** (this hour).
+2. **MTD-2026-10-24-005 failed a fourth recovered day.** 10-27 gameplay kept shipping at 04:15 (`#1199`), 06:12–06:21 (`#1200`–`#1202`), 08:08–08:21 (`#1203`–`#1205`), 12:12–12:16 (`#1206`–`#1209`), 16:11–16:15 (`#1210`–`#1212`), 18:14–18:28 (`#1213`–`#1216`), 20:15 (`#1217`). After 01:00 = **19 of 55**.
+3. **The active patch stream migrated.** Skip-wipe added only `#1215`. Advertised-vs-execute combat opened **sixteen** PRs and now has **109** open titles. Local one-flag patches are no longer sufficient (MTD-2026-10-22-005). Soak mill did not grow — do not treat silence as a close.
+4. 10-27 touched the freeze file again: `#1196` battle-floor highlight extract from WX. Hold it with `#831/#842/#901/#961/#995/#1076/#1109`. Quality audit `#1106` still scores the paint-extract strategy as NEGATIVE_ROI / FAKE MODULARITY.
+5. 10-28 first minutes already opened `#1218`–`#1252` (**35** drafts): advertised mill continues (`#1220/#1231/#1238/#1252`), map snap `#1229`, skip-wipe `#1239`, WX extract `#1241`, TBC `#1232` (seventeenth WAITING clone), Wave 20/21 catalogs. Combined recovered mill without dashboard disable is now the **steady state**, including the first minutes of day eight. Queue **886 → 921** while this ledger was written. `open-pr-stack-compat.sh --self` is **clean vs `origin/main`**. After superseded director `#448`, the living files conflict on `MASTER_ROADMAP.md` (MTD-2026-09-25-005). Do not merge-burst to “fix” the script.
+6. `#1186` did not land. Oldest-first still blocks the living index (MTD-2026-09-25-005). Close list now includes `#1186`.
+7. Admin implementer `3089f18d` is IDLE in this hour’s first snapshot (RUNNING on 10-27). Still **enabled**. Do not read IDLE as a halt.
 
 ---
 
 ## Seven-dimension evaluation
 
-### 1. Correctness — official client much safer; landing + kits still lie
+### 1. Correctness — official client still safer than the leftover queue
 
-ENGINEERING: Death replay, live Doka refs, ignore-client level, and GameKey replacing 60s auto-complete closed the 09-01 persist cluster for the official client. Do not open a fourth persist rewrite.
+ENGINEERING: Death replay, live Doka refs, ignore-client level, GameKey, Frozen/Slime execute MP, and barrier-aware walk rejects remain on `main`. Do not open a fourth persist rewrite.
 
-Recurring defect class: **teleport landing.** Swap still skips occupancy and hazards (MIMA-001). Controlled-summon dest now goes through `isCellFree` + unseal, then writes HP-unaware `updateCombatant`. Local Attack-Nearest / LoS patches are no longer the bottleneck — **landing authority** still is.
+Recurring defect class: **advertised vs execute.** This is now the **hottest** correctness mill. Sixteen one-flag `fix(combat)` PRs on 10-27; **109** open `advertised` titles. `spellEngine.ts` is 1,044 lines; WX is 19,213. One `resolveKitExecute` helper after halt (MTD-2026-10-22-005). Do not merge the mill. Do not concatenate.
 
-Recurring defect class: **preview vs execute.** Frozen/Slime MP doubling is still highlight-only. `findPath` still clips barriers. Pacifist preview mutation is closed; summon-kill Pacifist policy is a product decision, not a twin PR.
+Recurring defect class: **teleport / soak landing.** Swap still copies coordinates (`WX` 9389–9402) with no occupancy or hazard tax. Soak mill (`#1079/#1084/#1097/#1100/#1136/#1142`) did not grow on 10-27 and is still the same missing helper. Local per-effect patches are **no longer sufficient**. Controlled intervention: one `applyHazardLanding` (or equivalent) after halt. Do not concatenate the six PRs. `grep applyHazardLanding src/` = 0.
 
-Recurring defect class: **kit zone NaN.** Piece kits exist and grow at zone 1/2. Battle start still passes a LevelZone **object**. Every overworld enemy is zone-0. This is the cheapest unlock of “dynamic enemy spell pools” and it has survived two director cycles.
+Recurring defect class: **kit zone NaN.** `buildEnemyKit` expects a number (`enemyAI.ts` 194–197). Battle start still passes a LevelZone **object** (`WX` 11920). `currentZoneTier` already exists at line 1136. Nineteenth director cycle. Cheapest unlock of dynamic enemy spell pools — **P2 after halt**, not tonight.
 
-Recurring defect class: **EOP stables.** Stuffing maps into a frozen `NewActor` is a new failure mode. Local Motoko “just add the field” patches are **no longer sufficient**. The intervention is a later migration file + populated `check-stable` snapshot (#259). Do not perform a large persist refactor.
+Recurring defect class: **Striker AoE honesty.** #327 is still the oldest open PR and still CONFLICTING (56 days). #370 is the later union (AI/summon casts) and is still open. Restack #327, then union #370. Do not twin a third Striker PR.
 
-### 2. Player experience — honesty up, identity still incomplete
+Recurring defect class: **EOP stables.** Source chain is correct. Live Caffeine `.old` is still Aug-31 no-GameKey. Do not stuff fields into `20260831` or `20260901`.
 
-ENGINEERING: HUD leftover XP, recap feats, recap-under-credit input gate, admin spriteUrl copy, Buy Doka vs Items copy (#241), BuffShop `inventoryRef` consume, Pacifist preview. Those were unique; do not re-implement.
+### 2. Player experience — honesty on `main`; identity still incomplete
 
-DESIGN (PXA + Expansion + Spell Admin, no player data): the player is still handed the live catalog on minute one. Enemy-observed discovery is **not implemented**. Achievement/challenge/boss rewards remain Doka/XP, not spells. Four map modifiers are announce-only stubs. Family HP multipliers still die at battle start (`calcEnemyMaxHp`). Enemies register still describes a different game than the three live melee hooks.
+ENGINEERING: HUD leftover XP, recap feats, recap-under-credit input gate, Buy Doka vs Items, BuffShop `inventoryRef` consume, Pacifist preview, challenge HUD `#332`, Enemy Register lore `#328`. Those were unique; do not re-implement.
 
-GameKey (#258) is a **real** PX/ops change: Mollie → admin approve → 120-char code → `redeemGameKey` on the persist lock. It is not expansion content. It is blocked on #259 deploy.
+DESIGN (PXA + Expansion + Spell Admin, no player data): the player is still handed the live catalog on minute one (`shouldIncludeBackendSpellInLibrary` returns true whenever `usableByPlayer !== false` — `adminSafety.ts` 712–718). Enemy-observed discovery is **not implemented**. Achievement/challenge/boss rewards remain Doka/XP, not spells. Four map modifiers are announce-only stubs. `worldFeatures.ts` still has no WX import.
 
-MEASURED: none. Do not claim spells are over/underused.
+MEASURED: none. Do not claim spells are over/underused. A Wave 19/20 catalog that “players will love” is DESIGN INTERPRETATION. An advertised-combat PR that “fixes unused kits” is ENGINEERING of execute honesty, not proof of player demand.
 
-### 3. Technical health — hotspot + ledger + EOP
+### 3. Technical health — freeze file + leftover queue
 
-| Surface | Lines now | 09-01 director | Verdict |
-| :--- | ---: | ---: | :--- |
-| `WorldExploration.tsx` | 19,253 | 20,063 | Shrank (extraction) but 49 commits — freeze still broken |
-| `AdminDashboard.tsx` | 8,035 | 7,737 | Grew (GameKey tab / honesty). No publish pipeline |
-| `enemyAI.ts` | 2,583 | 2,582 | Frozen size; do not grow tonight |
-| `main.mo` | 3,838 | 3,501 | GameKey + clamps; **unupgradeable** on live Caffeine until #259 |
-| `mapGen.ts` | 1,544 | 1,348 | Freeze broken; freeze again |
-| `progressPersist.ts` | 323 | 323 | Leave it |
-| `targeting.ts` | 1,031 | 1,120 | Leave it |
-| `deathPenalty.ts` | 597 | — | Leave it after #256 |
+| Surface | Lines now | Verdict |
+| :--- | ---: | :--- |
+| `WorldExploration.tsx` | 19,213 | Freeze broken. `#1196` is the latest paint extract |
+| `AdminDashboard.tsx` | 8,280 | No canister DVA. Hold `#1190` / `#1115` |
+| `enemyAI.ts` | 2,580 | Frozen size; do not grow tonight |
+| `main.mo` | 3,903 | GameKey + clamps in source; live `.old` still Aug-31 |
+| `mapGen.ts` | 1,937 | Freeze broken; four more snaps on 10-27 |
+| `progressPersist.ts` | 421 | Leave it. Skip-wipe mill is remount policy, not a lock rewrite |
+| `targeting.ts` | 1,199 | Leave it |
+| `deathPenalty.ts` | 597 | Leave it after `#256` |
+| `spellEngine.ts` | 1,044 | Advertised-mill magnet. One helper after halt, not sixteen flags |
 
-`docs/automation/ACTION_IDS_2026-09-01.md` was supposed to be the director ledger. TBC and LHIPS concatenated into the same file. AQA-003 is still **PARTIAL and harmful**. Producers already have dated files — use them. Director index = this roadmap + `ACTION_IDS_2026-09-02.md`.
-
-Caffeine import gates (#182) plus stack-compat (#257) are process wins that should stay. #259 adds populated EOP `check-stable` — that is the missing half of the Motoko gate. Empty `.old` is **not** a live upgrade.
+`#1106` independently called #62-style WX paint extracts FAKE MODULARITY. Complexity-reduction `386a157d` is RUNNING again tonight.
 
 Stale paths remain documented, not live bugs: `dfx.json` → missing `src/backend_extended`; root `declarations/` 15-field snapshot; unused `src/backend/mixins/*`.
 
@@ -132,69 +126,63 @@ Present on `main`: player-relative tier spawn, AI tiers 1–10, named boss kits,
 Dead or contradictory vs core rules (DESIGN + ENGINEERING):
 
 - `buildEnemyKit(..., currentMap.levelZone)` still passes an **object** → zone-0 kits forever.
-- Summoner chance `0.12 + playerLevel * 0.02` saturates by the mid-40s.
-- `pickEnemyLevelFromTiers` `maxTier = floor(999 / tierSize)` stops climbing.
-- `computeAITier` still has a **30% fully random 1–10** roll (`combatMath.ts` 48–50).
-- Dual spell catalogs (frontend starters vs canister `shadow_strike`…`void_collapse`).
-- Admin adding a catalog spell still grants it to every player on hydrate (SDA-002).
+- `computeAITier` still has a **30% fully random 1–10** roll (`combatMath.ts` 34–50).
+- Dual spell catalogs (frontend starters vs canister). Admin adding a catalog spell still grants it to every player on hydrate.
 - `worldFeatures.ts` still tests-only; no WX import.
-- `ENEMY_AI_TIER_GATES` names still unused in `enemyAI.ts`.
+- `ENEMY_AI_TIER_GATES` names still unused as a gating table in `enemyAI.ts`.
+- Wave 19/20 expansion catalogs (`#1170/#1172/#1176/#1177/#1188/#1189/#1192/#1195/#1198`) overlap SDA/SDE/EBA/FORMATIONS/ELITE. That is **expansion overlap**, not a license to implement.
 
-Design specialists produced overlapping catalogs again on 09-01 (SDA, SDE, SPELL_DISCOVERY, EBA, ENEMY_AI, FORMATIONS, ELITE, WORLD_DYNAMICS, ENCOUNTER, VISUAL, SPELL_PROPOSALS). That is **expansion overlap**, not a license to implement. The 09-02 00:00 wave includes Approved Game Design Implementer, expansion, AI, spell mechanics, and dungeon encounters — default **hold**.
+Over-developed: specialist design catalogs, AdminDashboard chrome, WX paint extracts, advertised-flag patch mill.  
+Neglected: discovery persist, kit-zone number, landing authority, reward-trust ADR, Caffeine `.old` refresh, `saveKillCount` wiring.
 
 ### 5. Long-term scalability — rules vs implementation
 
-| Core rule | Implementation on `58302bc` |
+| Core rule | Implementation on `0f5363f` |
 | :--- | :--- |
-| No character level cap | Yes (`applyRewards` Nat loop). HUD saturates at 48 (`LHIPS-2026-09-01-001`). |
-| Increasing XP | Yes `100 * 2^(N-1)`. Practical wall ~level 15–22 on kill XP (DESIGN, not a bug to “fix” tonight). |
-| Player-relative enemies | Yes until the 999-tier ceiling (PREREQ-B). |
+| No character level cap | Yes (`applyRewards` Nat loop). HUD saturates at 48 (HOLD; do not retune). |
+| Increasing XP | Yes `100 * 2^(N-1)`. Practical wall ~level 15–22 on kill XP is DESIGN, not a tonight bug. |
+| Player-relative enemies | Yes until the 999-tier ceiling. |
 | Progressively sophisticated enemies | Partial; 30% random tier + zone-0 kits undermine it. |
 | Dynamic enemy spell pools | Boss phases yes; overworld = static piece kits stuck at zone 0. |
 | Enemy-observed spell discovery | **Absent** |
 | Achievement / challenge / boss spell unlocks | Rewards are Doka/XP |
-| Backend-authoritative persistence | Wallet/XP/death yes (clamped; level pinned). Combat client-side. Achievement unlock still client-asserted. BuffShop potions still `${principal}_inventory`. GameKey redeem is canister-authoritative **in source**; live canister cannot take the wasm yet. |
-| Optional owner-uploaded visuals + pixel fallback | Still true; admin copy now says stored. Do not make URLs required. |
-| Admin Draft → Validate → Activate | **Not a canister workflow.** Local React drafts + retire-via-`usableByPlayer` remain. |
+| Backend-authoritative persistence | Wallet/XP/death yes (clamped; level pinned). Combat client-side. GameKey redeem is canister-authoritative **in source**; live Caffeine previous-version signature is still Aug-31. |
+| Optional owner-uploaded visuals + pixel fallback | Still true. Do not make URLs required. |
+| Admin Draft → Validate → Activate | **Not a canister workflow.** |
 
-Expansion that adds spells, AI behaviors, or admin chrome **before** #259 deploy, landing-authority extraction, and a reward-trust ADR will not scale. GameKey was a legitimate ops expansion that skipped the EOP file rule — that is the lesson, not a reason to freeze GameKey product code after #259.
+Expansion that adds spells, AI behaviors, or admin chrome **before** halt, landing-authority extraction, and a reward-trust ADR will not scale. Wave 19/20 catalogs should wait for infrastructure (SDA-002 ownership maps, PREREQ-A kit zone, AQA-008 ADR, Caffeine deploy).
 
-### 6. Data / persistence safety — official client safer; live upgrade is the P0
+### 6. Data / persistence safety — official client safer; deploy + skip-wipe mill
 
 `saveBattleStats` may still **lower** Doka/XP (required for heals/spends/death). It must not raise them — that write is on `main`. Finding 3 is still stale if phrased as “must not write Doka.” Client level can no longer demote.
 
-`applyRewards` is still client-trusted **within** 100k/500k. Custom clients can still drip-mint. `calculateAndAwardDoka` remains an unused public mint. `markAchievementUnlocked` is still unproven. Shop 60s auto-complete is **gone** in source (GameKey).
+`applyRewards` is still client-trusted **within** 100k/500k. Custom clients can still drip-mint. `calculateAndAwardDoka` remains an unused public mint.
 
-#259 is the official-canister upgrade hole that #258 created. Empty-canister M0263 is the wrong test for this class.
+Skip-wipe mill (115 `skip remount` titles) is a remount-policy hole, not a new persist lock. It grew by **one** titled PR on 10-27 (`#1215` leftover spell-level keep). After halt: one hydrate-wipe guard (MTD-2026-10-23-005). `#391` unpaid-death honour on GameKey redeem is a **different** helper and is still unwired (`shopPurchase.ts` 294–330 — raw lock+grant, no death pending).
 
-Wallet seeding / idle-hydrate / unpaid death replay remain load-bearing. Do not invent a second persist path for telemetry or discovery grants. `redeemGameKeyThroughPersist` already uses the lock — leave that shape.
+Caffeine `.old` is still the Aug-31 no-GameKey signature. Do not hand-write it. Confirm deploy (MTD-2026-09-21-002). **55 days** since GameKey source landed.
 
-### 7. Automation coherence — P0, same failure, third consecutive midnight
+### 7. Automation coherence — P0, seventh recovered mill day, eighth midnight launching
 
-AQA-001…012 were written 08-30 19:00. The 08-31 and 09-01 00:00 waves ignored them. Humans then merged almost every draft. Orchestrators correctly said “hold dirty persist/targeting/mapGen” and were overridden.
+AQA-001…012 were written 08-30. Humans then froze `main` (merge-stop) while leaving implementers **enabled** (config miss). Recovery after the 09-30…10-20 ERROR outage rebuilt the mill for **seven consecutive days**.
 
-This 00:00 UTC window launched **41 automations** — including Dungeon Solvability Guardian, Combat Rules Consistency, Adversarial QA, Security & Abuse, Economy hunter, Persist auditor, Approved Game Design Implementer, complexity reduction, admin implementers, expansion, AI, feel, and telemetry dashboard.
+This 00:00 UTC window launched **52** automations — 48 RUNNING — including map guardian, combat parity, persist auditor, Approved Design (IDLE first snapshot, still enabled), complexity reduction, expansion, AI, boss, dungeon, spell mechanics, spell discovery, critical hunter, and invariants.
 
-That is exactly “P2/P3 expansion displacing unresolved P0/P1.” #259 is the P0 that should merge; everything else from this hour should be ACTION_IDs or hold.
+That is exactly “P2/P3 expansion displacing unresolved P0/P1.”
 
-| AQA / MTD ID | Director status 2026-09-02 |
+| AQA / MTD ID | Director status 2026-10-28 |
 | :--- | :--- |
 | AQA-001 hunter throttle | **OPEN** — `996df6df` still not GetAutomation-visible. |
-| AQA-002 one critical hunter | **OPEN** — `1aa41c6c` enabled. Volume problem remains the rest of the flock. |
-| AQA-003 in-repo ACTION_ID ledger | **PARTIAL / HARMFUL** — 09-01 file concatenated; dump-yard still exists. Need one **index**, not one append-only blob. |
-| AQA-004 don’t merge the 08-30 stack | **SUPERSEDED** — accept `main`. |
-| AQA-005 test clone mill | **PARTIAL** — #173 stacked; test builder in tonight’s flock. |
-| AQA-006 no mapGen implementation | **BROKEN** — #206 / #246 and CA-island punches. Guardian running now. |
-| AQA-007 freeze drive-by WX | **BROKEN** — 49 commits; file shrank via extraction but hunters still live there. |
-| AQA-008 security → ADR | **PARTIAL** — clamps + ignore-client level on `main`; no ADR. Security running again tonight. |
-| AQA-009 orchestrator must not implement gameplay | **PARTIAL** — 09-01 orchestrators implemented unique display (acceptable). Orchestrator is running this hour. |
-| AQA-010 persist/economy dedup | **PARTIAL** — cluster landed; do not open a third persist PR. Economy hunter running tonight. |
-| AQA-011 prompts vs live architecture | **OPEN** |
-| AQA-012 outcome telemetry | **OPEN** — dashboard specialist running with nothing to display. |
-| MTD-001 flock halt | **OPEN** — failed 08-31; failed 09-01; failing 09-02. |
-| MTD-2026-09-02-002 | **NEW** — merge #259. |
+| AQA-002 one critical hunter | **OPEN** — `1aa41c6c-a483` enabled and RUNNING tonight. Not `-a484`. |
+| AQA-003 in-repo ACTION_ID ledger | **PARTIAL** — this file + dated director ledger. Living index still off `main`. |
+| AQA-006 no mapGen implementation | **BROKEN** — four more snaps on 10-27; guardian RUNNING. |
+| AQA-007 freeze drive-by WX | **BROKEN** — `#1196` plus complexity reduction RUNNING. |
+| AQA-008 security → ADR | **PARTIAL** — clamps on `main`; no ADR. Security RUNNING tonight. |
+| AQA-012 outcome telemetry | **OPEN** — TBC correctly WAITING. Dashboard specialist RUNNING with nothing to display. |
+| MTD-001 flock halt | **OPEN** — failed as config for seven recovered days. Held as merge-stop for 55 days. |
+| MTD-2026-10-24-005 daytime halt | **OPEN** — failed a **fourth** recovered day (19 of 55 after 01:00). |
 
-Cursor Cloud has **no write API** for dashboard prompts (`get-automation` is read-only). Halt is a human config action. In-repo gates (Caffeine import, stack-compat, forthcoming EOP snapshot in #259) are the enforceable half.
+Cursor Cloud has **no write API** for dashboard prompts. Halt is a human config action. In-repo gates are the enforceable half. Do not merge-burst to “fix” stack-compat.
 
 ---
 
@@ -202,13 +190,15 @@ Cursor Cloud has **no write API** for dashboard prompts (`get-automation` is rea
 
 Do **not** automatically perform a large refactor.
 
-1. **EOP / frozen NewActor** — #259 is the last allowed GameKey-migration patch in this cluster. After it, new stables = new later file + populated `check-stable`. Stop stuffing fields into `20260831`.
-2. **Landing / occupancy / MP-cost authority** — Swap + summon-walk hazards + Frozen execute + barrier-aware `findPath` need **helpers**, not more WX branches. Occupancy dest for summons already exists (`resolveControlledSummonMoveDest`). Next is `applyHazardLanding` + `battleWalkMpCost` + battle `findPath` wrapper. One helper PR each; one-line WX wiring.
-3. **Kit-zone number** (PREREQ-A) — not a refactor. One call site. Unblocks dynamic pools. Wait until this hour’s flock is held.
-4. **Canister trust** — write the ADR (AQA-008). Clamps and ignore-client level already match de-facto (a). Until the ADR exists, no new credit APIs and no discovery grant writer.
-5. **Automation flock** — one critical hunter, report-only specialists on cron restart, no same-hour implementer pile-on after a merge burst. **This is still the binding constraint.** Three midnights in a row.
+1. **Automation flock** — seven recovered mill days, 404 drafts, **921** leftovers. This is still the binding constraint. Disable implementers at **every** cadence, not only 00:00.
+2. **Advertised vs execute** — 109 open titles; sixteen new on 10-27. One `resolveKitExecute` after halt. Hold pack-enemy / share-kit / one-flag combat. **This is the mill that grew yesterday.**
+3. **Landing / soak authority** — Swap + summon-walk + reflect + leftover-walk + Plague Zone. One `applyHazardLanding` after halt. Hold the six soak/tax PRs and `#541/#754`. Mill did not grow on 10-27; still open.
+4. **Remount wipe** — 115 skip-remount titles. One hydrate-wipe guard after halt. Do not fold `#391` into it. Mill quieter on 10-27 (one new PR); persist auditor still RUNNING.
+5. **EOP / frozen NewActor** — source is correct. Confirm Caffeine deploy; never hand-write `.old`; never amend `20260831` / `20260901`.
+6. **Kit-zone number** (PREREQ-A) — not a refactor. One call site. Wait until the flock is held. Nineteenth cycle.
+7. **Canister trust** — write the ADR (AQA-008). Until it exists, no new credit APIs and no discovery grant writer.
 
-HP/death extraction (MTD-003) is still valid. Do not start it in the same hour as #259 or the flock.
+HP/death extraction (MTD-003) is still valid. Do not start it in the same hour as the flock.
 
 ---
 
@@ -216,15 +206,20 @@ HP/death extraction (MTD-003) is still valid. Do not start it in the same hour a
 
 | Order | PR | Action |
 | :--- | :--- | :--- |
-| 1 | **#259** | Review/merge/deploy. Unique P0 EOP migration so Caffeine can upgrade GameKey stables. Draft, +1397/−54, 15 files, clean vs `58302bc`. Oldest open PR. |
-| 2 | **#272** | GameKey bindgen/Candid sync. **After #259**, not instead of it. #259 does not regenerate `backend.ts`. |
-| — | **#261** | GameKey Candid tests. After #259/#272. |
-| — | **#265** | **Hold.** WX reject floats (AQA-007 / GFCF). Display-only but touches the freeze file during a flock. |
-| — | **#260 #262–#264 #266–#271 #273** | Docs-only from this hour. OK if they do not rewrite SDA/SDE/EBA schemas or retune BAL-*. Do not merge ahead of #259 when files overlap. |
-| — | Any later PR from the 09-02 00:00 wave | Default **hold**. Especially hold mapGen, targeting, persist, `enemyAI`, AdminDashboard, `main.mo` stables, and telemetry UI. |
-| — | Motoko PRs that add persistent `let`/`var` | **Hold until #259 is on `main` and deployed.** Restack onto #259; never amend `20260831` / `20260901` NewActor. |
+| 1 | **This living index** | After closing superseded director snapshots (MTD-2026-10-28-002). Docs only. |
+| 2 | **#327** | Restack onto `0f5363f` (CONFLICTING, 56 days). Unique leftover gameplay. |
+| 3 | **#370** | Union unique AI/summon Striker delta **after** #327. Do not twin. |
+| — | **#362** | Unique GameKey serial + keep-store. After halt; no new stables. |
+| — | **#391** | Unique unpaid-death helper. Still does not wire redeem. After halt; do not fold into skip-wipe. |
+| — | **#380 / #385 / #667 / #664 / #536 / #517 / #354** | Unique leftovers. After halt. |
+| — | **#331** | **HOLD.** CONFLICTING map destack. |
+| — | **#541 / #754 / #850** | **HOLD** Swap mill. |
+| — | Skip-wipe / pack-enemy / soak / map snap / WX extract / Pale Archivist / Enthroned Void / Eternal Pawn test mills | **HOLD.** Close twins after one helper each. |
+| — | `#1165` and later TBC WAITING clones | Keep `#333`; close twins. |
+| — | `#1106` | Quality audit agrees halt. Do not merge its ledger ahead of this index. |
+| — | Tonight’s `#1218`–`#1252` and the rest of the 10-28 wave | Default **HOLD**. Especially hold advertised `#1220/#1231/#1238/#1252`, map `#1229`, skip-wipe `#1239`, WX extract `#1241`, admin `#1223`. |
 
-Do not restack death-replay, `writeLiveDoka`, `writeLevel`, leftover-XP HUD, recap click-through, or GameKey product code.
+Do not restack death-replay, `writeLiveDoka`, `writeLevel`, leftover-XP HUD, recap click-through, GameKey product code, Frozen execute MP, challenge HUD, or Enemy Register lore.
 
 ---
 
@@ -232,35 +227,40 @@ Do not restack death-replay, `writeLiveDoka`, `writeLevel`, leftover-XP HUD, rec
 
 **P0 — do these before any expansion PR merges**
 
-1. Halt the 09-02 same-hour implementer flock (MTD-2026-08-31-001, MTD-2026-09-02-001).
-2. Merge and deploy #259 (MTD-2026-09-02-002). Freeze Motoko stables until that lands (MTD-2026-09-02-003).
-3. Write the reward-trust ADR (AQA-008). Finding 3 = unbounded/absolute misuse, not “Doka write is a bug.” Clamps and ignore-client level already match option (a).
-4. Stop concatenating specialist catalogs into director ledgers (MTD-2026-09-02-004 / AQA-003).
+1. Halt the 10-28 same-hour implementer flock **and** the 06/12/18 cadences (MTD-2026-08-31-001, MTD-2026-10-28-001, MTD-2026-10-24-005).
+2. Do not merge-burst the 921 leftover drafts (MTD-2026-10-28-004).
+3. Close superseded director PRs #338…#1186; land this living index (MTD-2026-10-28-002 / MTD-2026-09-25-005).
+4. Confirm Caffeine 20260901 GameKey deploy + refresh `.old` (MTD-2026-09-21-002). Freeze new stables until that lands (MTD-2026-09-02-003).
+5. Write the reward-trust ADR (AQA-008).
 
-**P1 — infrastructure / gameplay integrity**
+**P1 — infrastructure / gameplay integrity (after halt)**
 
-5. Re-freeze `mapGen.ts`, `targeting.ts`, `enemyAI.ts`, and WX drive-bys (AQA-006, AQA-007). Solvability Guardian = fixtures + ACTION_IDs only.
-6. Extract `applyHazardLanding` for Swap + controlled-summon walk (MIMA-001 + MIMA-002 remainder). Occupancy helper already exists — do not rewrite it.
-7. Shared `battleWalkMpCost` for Frozen/Slime (MIMA-2026-09-01-001) and barrier-aware battle path (MIMA-2026-09-01-002). Helpers, then one WX call site each. Do not change the 2× formula.
-8. Controlled HP/death extraction (MTD-2026-08-31-003) **after** landing helpers — not tonight.
+6. Restack/merge #327 Striker, then union #370 (MTD-2026-09-21-003 / MTD-2026-09-22-004).
+7. Re-freeze `mapGen.ts`, `targeting.ts`, `enemyAI.ts`, `spellEngine.ts`, and WX drive-bys (AQA-006, AQA-007).
+8. One `resolveKitExecute` helper; close advertised / pack-enemy twins (MTD-2026-10-22-005). **Do this before another advertised-flag day.**
+9. One remount-wipe guard; close skip-wipe twins (MTD-2026-10-23-005).
+10. One `applyHazardLanding` / soak helper; hold Swap `#541/#754` (MIMA-001, MTD-2026-10-26-005).
+11. #391 GameKey unpaid-death helper, then redeem wire (MIMA-2026-09-02-003).
+12. #362 GameKey serial / saveActiveSpells keep-store.
+13. Controlled HP/death extraction (MTD-003) **after** landing helpers — not tonight.
 
 **P2 — high-value expansion (after P0/P1, not this hour)**
 
-9. Outcome counters, then maybe a dashboard (AQA-012 before TADD UI).
-10. Fix kit-zone call site (Expansion PREREQ-A) — pass a **number**, not `levelZone` object. This unblocks dynamic pools without a new AI rewrite.
-11. Enemy-observed spell discovery + ownership maps (SDA-002/003/004). Requires persist lock + metadata; never `spell.name`. Requires a **new later** migration after #259, not a stuffed NewActor.
-12. Admin Draft → Validate → Activate on the canister (SDA-005 / MTD-006). Do not grow the 8.0k dashboard first.
-13. Seed frontend starter ids; stop treating `usableByPlayer` as ownership (SDA-007 / SDA-2026-09-01-003).
-14. Revisit `computeAITier` 30% random vs progressive sophistication (MTD-008). Report/design, not an `enemyAI.ts` rewrite.
-15. Wire `saveKillCount` or drop it from the leaderboard (MTD-005).
-16. BuffShop `buffInventories` vs `${principal}_inventory` (SDEG-005) — after persist quiet.
+14. Outcome counters, then maybe a dashboard (AQA-012 before TADD UI).
+15. Fix kit-zone call site (EXPANSION-PREREQ-A) — pass a **number**. Nineteenth cycle.
+16. Enemy-observed spell discovery + ownership maps (SDA-002/004). New later migration after deploy, not a stuffed NewActor.
+17. Admin Draft → Validate → Activate on the canister (MTD-006). Do not grow the 8.3k dashboard first.
+18. Seed frontend starter ids; stop treating `usableByPlayer` as ownership (SDA-007).
+19. Revisit `computeAITier` 30% random vs progressive sophistication (MTD-008). Report/design, not an `enemyAI.ts` rewrite.
+20. Wire `saveKillCount` or drop it from the leaderboard (MTD-005). Hook exists in `useLeaderboardQueries.ts`; no TSX caller.
 
 **P3 — polish**
 
-17. Recap / HUD leftovers already shipped — do not restack.
-18. Visual / game-feel / mobile — DESIGN.md already specifies the look; GFCF-003 (primary-hit juice) is the unique remaining feel P0 but **must not** land in this hour’s flock. Do not edit combat math or WX for feel.
-19. Dead-code / maintainability — report only while hunters are hot.
-20. GameKey operator UX polish — only after #259 deploy.
+21. Recap / HUD leftovers already shipped — do not restack.
+22. #354 Feats copy and #517 empty Map Effects are leftover unique display.
+23. Visual / game-feel / mobile — DESIGN.md already specifies the look. Do not edit combat math or WX for feel.
+
+Do not let P2/P3 expansion PRs from the leftover queue, the 10-21…10-27 mills, or the 10-28 00:00 wave displace the P0/P1 list.
 
 ---
 
@@ -269,75 +269,77 @@ Do not restack death-replay, `writeLiveDoka`, `writeLevel`, leftover-XP HUD, rec
 | Conflict | Resolution |
 | :--- | :--- |
 | Security “don’t write Doka from `saveBattleStats`” vs ARCHITECTURE | Write stays; **clamp / no-mint**. ADR still required. |
-| Solvability vs `AGENTS.md` mapGen | #110 plus later punches already merged; **freeze**. |
-| AQA-004 vs human merge of 08-30/08-31/09-01 stacks | Accept `main`; clean leftovers; do not re-open merged themes. |
-| #180 vs #167/#169/#175 | Helpers won; they are on `main`. Do not restack. |
-| #183 vs #175 vs #256 death replay | All on `main`. Freeze `deathPenalty.ts`. |
+| Solvability vs `AGENTS.md` mapGen | Freeze. Hold snaps. |
 | Progressive AI vs 30% random tier | Design decision later; no first-hour AI PR. |
-| SDA vs SDE vs SPELL_DISCOVERY vs EBA vs BOSS docs | One discovery persist shape (SDA-002/004). Others are content cards, not parallel schemas. |
+| SDA vs SDE vs SPELL_DISCOVERY vs EBA vs BOSS docs | One discovery persist shape (SDA-002/004). Others are content cards, not parallel schemas. Wave 19/20 catalogs are twins of Wave 17/18. |
 | Expansion specialists vs “P0/P1 first” | Tonight’s wave is the violation. Hold their PRs. |
 | Telemetry dashboard vs no counters | AQA-012 first. TBC stays WAITING_FOR_TELEMETRY. |
-| Empty `.old` check-stable vs live Caffeine | Empty proves import. Live upgrade needs populated snapshot + later migration (#259). |
-| GameKey on `main` vs canister trap | Source is ahead of deploy. Merge #259; do not revert GameKey product. |
-| `usableByPlayer=false` as retire vs enemy-only gate | SDA-2026-09-01-001; do not extend the flag. |
-| Family HP paper vs `calcEnemyMaxHp` | PREREQ-H; honesty bug; not an AI rewrite. |
+| Empty / Aug-31 `.old` vs GameKey source | Source is ahead of deploy. Confirm deploy; do not revert GameKey product. |
+| `#1106` weekly audit vs this index | Same halt. Do not merge `#1106` ahead of this file. |
+| Skip-wipe mill vs `#391` unpaid-death | Different helpers. Do not concatenate. |
+| Soak mill vs Swap `#541/#754` | Same landing authority. One helper; hold all. |
+| Advertised-combat mill vs share-kit `#850` | Same execute-honesty class. One `resolveKitExecute`; hold all. |
+| Skip-wipe quieter vs advertised louder | Not a close of skip-wipe. The **active** mill moved. Halt both. |
+| Admin implementer IDLE vs halt | IDLE ≠ disabled. `3089f18d` is still enabled. |
 
 ---
 
 ## TOP 5 CURRENT PRIORITIES
 
-1. **Halt the 09-02 00:00 implementer flock** (41 automations). First-run and expansion specialists: ACTION_IDs only. Especially hold mapGen, persist, targeting, `enemyAI`, AdminDashboard, `main.mo` stables, telemetry UI.
-2. **#259 EOP GameKey migration** — unique official-canister P0. Caffeine already trapped IC0503. Merge, then deploy. No more persistent fields until that chain is live.
-3. **Reward-trust ADR (AQA-008)** — clamps and ignore-client level landed; the written decision did not. Security is running again tonight with the stale Finding 3 phrasing.
-4. **Re-freeze WX / mapGen / targeting / enemyAI** so landing/MP helpers can be one extraction each, not another burst.
-5. **Ledger hygiene (AQA-003)** — director writes `ACTION_IDS_YYYY-MM-DD.md`; specialists write `ACTION_IDS_<PREFIX>_YYYY-MM-DD.md`. Do not concatenate into 09-01 or 08-31.
+1. **Halt the 10-28 00:00 implementer flock and the 06/12/18 cadences.** 52 automations (48 RUNNING). First-hour drafts `#1218`–`#1252` (**35**) already exist, including advertised combat, a map snap, skip-wipe, and a WX extract. Especially hold mapGen, persist, targeting, `enemyAI`, `spellEngine`, AdminDashboard, `main.mo` stables, telemetry UI, soak, skip-wipe, advertised combat, WX extracts.
+2. **Do not merge-burst the 921 leftover drafts.** Seven recovered days opened 404 PRs; this hour added 35 more. Close superseded director snapshots; restack #327 only.
+3. **Confirm Caffeine 20260901 GameKey deploy and refresh `.old`.** Source is correct; live previous-version signature is still Aug-31 no-GameKey. **55 days.**
+4. **Write the reward-trust ADR (AQA-008).** Clamps landed; the written decision did not. Security is running again tonight.
+5. **After halt: one helper each** for advertised-kit execute (the mill that grew), skip-wipe, and hazard landing — then restack #327. Not tonight.
 
 ## BLOCKED WORK
 
-- Spell discovery / observed enemy kits / new unlock loops — no ownership persist, combat landing still racing, ADR unwritten, EOP chain broken on live Caffeine.
-- Enemy AI capability expansion — `enemyAI.ts` already 2,583 lines; kits never leave zone 0; HP/death still dual-written.
-- Telemetry admin dashboard — no counters to display (AQA-012). Balance analyst correctly idle.
-- Any Motoko PR that adds stables until #259 is merged and deployed.
-- Further `mapGen.ts` punches without an explicit human playtest of the #110→#246 sequence.
+- Spell discovery / observed enemy kits / new unlock loops — no ownership persist, combat landing still racing, ADR unwritten, Caffeine `.old` still Aug-31.
+- Enemy AI capability expansion — `enemyAI.ts` already 2,580 lines; kits never leave zone 0; HP/death still dual-written.
+- Telemetry admin dashboard — no counters to display (AQA-012). TBC correctly WAITING.
+- Any Motoko PR that adds stables until deploy is confirmed and `.old` is refreshed from that build.
+- Further `mapGen.ts` punches without an explicit human playtest of the landed solvability sequence.
 - Custom-client mint proofs / new credit APIs until the ADR exists.
-- `calculateAndAwardDoka` productization (unused official path; still a sink).
 - Formula-level `BAL-*` / `LHIPS-*` retunes (no telemetry; jackpot 100k clamp is architecture).
-- Admin Draft→Validate→Activate chrome on the 8k dashboard before canister lifecycle exists.
+- Admin Draft→Validate→Activate chrome on the 8.3k dashboard before canister lifecycle exists.
+- Oldest-first merge of the leftover queue (MTD-2026-09-25-005).
+- Wave 19/20 catalogs, advertised-flag combat, and WX paint extracts until the three helper extractions exist.
 
 ## SAFE EXPANSION WORK
 
-- Merge #259 (scoped migration + gate docs already in that PR). Do not duplicate it.
-- Adopt per-producer ledgers + this director index (AQA-003) — process, not gameplay.
-- Design-only (no PR): keep SDA/SDE/EBA catalogs; do not author a fifth discovery schema.
+- Close superseded director PRs and land this index (process, not gameplay).
+- Design-only (no PR merge): keep SDA/SDE/EBA catalogs; do not author a fifth discovery schema; do not merge Wave 19/20.
 - Query-only / persist-lock-enqueued counters (AQA-012) — **design + tiny isolated PR after flock halt**, not a dashboard.
 - Kit-zone number fix (PREREQ-A) **after** the flock is held — one call site + `enemyAI` test, no WX growth.
-- Display-only unique copy if orchestrator finds one hole not already on `main`.
+- Display-only unique copy if a hole not already on `main` is found — after halt.
 
 ## AREAS TO STOP TOUCHING TEMPORARILY
 
 - `src/frontend/src/components/WorldExploration.tsx` except one-line helper wiring
 - `src/frontend/src/engine/mapGen.ts`
+- `src/frontend/src/engine/spellEngine.ts` (advertised mill)
 - RAF loop, turn-order math, damage formulas (`AGENTS.md`)
 - `src/frontend/src/utils/progressPersist.ts` (leave the lock)
 - `src/frontend/src/utils/deathPenalty.ts` (cluster closed)
 - `src/frontend/src/engine/targeting.ts`
 - `src/frontend/src/engine/enemyAI.ts`
 - `src/frontend/src/components/AdminDashboard.tsx`
-- `src/backend/main.mo` persistent fields until #259 deploys
-- `src/backend/migrations/20260831_000000.mo` (frozen; #259 restores it)
-- `docs/automation/ACTION_IDS_2026-08-31.md` and `ACTION_IDS_2026-09-01.md` (do not append)
-- GameKey product methods (`requestGameKeyPurchase` / `redeemGameKey`) except via #259
+- `src/backend/main.mo` persistent fields until Caffeine deploy refreshes `.old`
+- `src/backend/migrations/20260831_000000.mo` and `20260901_000000.mo` (frozen)
+- `docs/automation/ACTION_IDS_2026-08-31.md` through `ACTION_IDS_2026-10-27.md` (do not append)
+- GameKey product methods except via a confirmed deploy
 
 ## ARCHITECTURAL HOTSPOTS
 
-1. EOP stables vs frozen migration `NewActor` (#258/#259) — new class of deploy blocker
-2. Dual HP / death / landing authority (React snapshot vs `combatantsRef` vs Swap/summon teleport)
-3. Client-trusted `applyRewards` without a written ADR (clamps exist; decision does not)
-4. 19k-line world orchestrator absorbing every hunter (shrank, still the magnet)
-5. Automation pile-on (41 same-hour agents, third consecutive midnight)
-6. ACTION_ID dump / concatenation replacing a usable index
+1. Automation pile-on (52 same-hour agents; 404 drafts in seven recovered days; 921 leftovers)
+2. Advertised kit metadata vs execute (109 open titles; sixteen new on 10-27) — local patches no longer sufficient
+3. Dual HP / death / landing authority (React snapshot vs `combatantsRef` vs Swap/summon/reflect teleport)
+4. Remount `saveBattleStats` wipe vs committed keeps (115 skip-remount titles; quieter yesterday, not closed)
+5. Client-trusted `applyRewards` without a written ADR
+6. 19k-line world orchestrator absorbing every hunter (paint extracts are FAKE MODULARITY; `#1196` joined `#1109`)
 7. Dual spell catalogs + implicit ownership (blocks discovery)
-8. Kit-zone object call site (dynamic pools implemented and dead)
+8. Kit-zone object call site (dynamic pools implemented and dead; nineteenth cycle)
+9. EOP `.old` still Aug-31 while source carries GameKey
 
 ## TELEMETRY SIGNALS WORTH INVESTIGATING
 
@@ -345,13 +347,15 @@ Do not restack death-replay, `writeLiveDoka`, `writeLevel`, leftover-XP HUD, rec
 
 When AQA-012 lands, investigate in this order (engineering + design, not telemetry-alone priority):
 
-1. persist-ok vs persist-fail and death-penalty-applied vs victory-paid vs **single-axis-credit-then-death** (integrity; #183/#256 class — measure whether the hole is closed, do not assume)
-2. GameKey request vs approve vs redeem vs redeem-fail (ops; new funnel; do not treat 0 rows as “players don’t buy”)
-3. recap opened vs dismissed vs lava-death-during-recap (PX; input gate may have closed — measure)
-4. spell-cast counts **by acquisition path** (starter vs unlocked vs observed) — a “weak” spell may be undiscovered, not weak. Today every catalog id is treated as owned, so this series would be **meaningless** until SDA-002.
-5. Attack Nearest vs aimed-cast ratio (gate confusion vs power)
-6. challenge accept vs complete vs advertised-reward-missing
-7. Swap / summon-walk onto hazards vs walk onto the same tile (MIMA-001 remainder — if “Untouchable complete rate” is high, DESIGN INTERPRETATION is skip-landing, not player skill)
-8. Frozen/Slime maps: tiles walked vs preview budget (MIMA-2026-09-01-001 — if players “cheat” MP, ENGINEERING is execute 1×)
+1. persist-ok vs persist-fail and death-penalty-applied vs victory-paid vs **single-axis-credit-then-death** (integrity — measure whether `#183/#256` stayed closed)
+2. GameKey request vs approve vs redeem vs redeem-fail (ops; do not treat 0 rows as “players don’t buy”)
+3. remount-after-keep wipe vs unpaid-death apply (skip-wipe mill — if Doka drops after a keep, ENGINEERING is remount policy)
+4. advertised-kit execute vs preview (if “players ignore kit spells,” DESIGN INTERPRETATION may be execute lying, not power — 109 open advertised PRs are ENGINEERING, not MEASURED)
+5. recap opened vs dismissed vs lava-death-during-recap (PX)
+6. spell-cast counts **by acquisition path** (starter vs unlocked vs observed) — a “weak” spell may be undiscovered, not weak. Today every catalog id is treated as owned, so this series would be **meaningless** until SDA-002.
+7. Attack Nearest vs aimed-cast ratio (gate confusion vs power)
+8. challenge accept vs complete vs advertised-reward-missing
+9. Swap / summon-walk onto hazards vs walk onto the same tile (MIMA-001 remainder — if “Untouchable complete rate” is high, DESIGN INTERPRETATION is skip-landing, not player skill)
+10. Frozen/Slime maps: tiles walked vs preview budget (execute MP already fixed on `main` — measure, do not re-patch)
 
 Until those exist: automations must not claim CLEAR_POSITIVE_SIGNAL or “players don’t use X.” Distinguish MEASURED PLAYER BEHAVIOUR (none) from DESIGN INTERPRETATION and ENGINEERING EVIDENCE.
