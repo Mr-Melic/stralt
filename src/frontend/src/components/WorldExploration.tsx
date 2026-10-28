@@ -206,6 +206,7 @@ import {
   playerFacingRejectReason,
 } from "../engine/rejectCopy";
 import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
+import { drawFloorOcclusionShade } from "../engine/shadeFloorOcclusion";
 import {
   SPAWN_MIN_CHEBYSHEV,
   applyFamilyVariantsToRoster,
@@ -7556,61 +7557,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
 
           // ── A. Tile ambient occlusion ────────────────────────────────────
+          // Paint lives in engine/shadeFloorOcclusion.ts. Do not fold into
+          // tilePaint, mapHazardPaint, combatTileOverlay, or the AO mask
+          // builder. Live draw only shades bits 4 and 8.
           const aoMask = aoMaskRef.current;
           if (aoMask) {
-            const bits = aoMask[y * WORLD_GRID_SIZE + x];
-            if (bits & 4) {
-              ctx.save();
-              const grad = ctx.createLinearGradient(
-                screenPos.x + effectiveTileW / 2,
-                screenPos.y + effectiveTileH / 2,
-                screenPos.x + effectiveTileW / 2 - 8,
-                screenPos.y + effectiveTileH / 2,
-              );
-              grad.addColorStop(0, "rgba(0,0,0,0.22)");
-              grad.addColorStop(1, "rgba(0,0,0,0)");
-              ctx.beginPath();
-              ctx.moveTo(screenPos.x, screenPos.y);
-              ctx.lineTo(
-                screenPos.x + effectiveTileW / 2,
-                screenPos.y + effectiveTileH / 2,
-              );
-              ctx.lineTo(screenPos.x, screenPos.y + effectiveTileH);
-              ctx.lineTo(
-                screenPos.x - effectiveTileW / 2,
-                screenPos.y + effectiveTileH / 2,
-              );
-              ctx.closePath();
-              ctx.fillStyle = grad;
-              ctx.fill();
-              ctx.restore();
-            }
-            if (bits & 8) {
-              ctx.save();
-              const grad = ctx.createLinearGradient(
-                screenPos.x - effectiveTileW / 2,
-                screenPos.y + effectiveTileH / 2,
-                screenPos.x - effectiveTileW / 2 + 8,
-                screenPos.y + effectiveTileH / 2,
-              );
-              grad.addColorStop(0, "rgba(0,0,0,0.22)");
-              grad.addColorStop(1, "rgba(0,0,0,0)");
-              ctx.beginPath();
-              ctx.moveTo(screenPos.x, screenPos.y);
-              ctx.lineTo(
-                screenPos.x + effectiveTileW / 2,
-                screenPos.y + effectiveTileH / 2,
-              );
-              ctx.lineTo(screenPos.x, screenPos.y + effectiveTileH);
-              ctx.lineTo(
-                screenPos.x - effectiveTileW / 2,
-                screenPos.y + effectiveTileH / 2,
-              );
-              ctx.closePath();
-              ctx.fillStyle = grad;
-              ctx.fill();
-              ctx.restore();
-            }
+            drawFloorOcclusionShade(
+              ctx,
+              screenPos.x,
+              screenPos.y,
+              effectiveTileW,
+              effectiveTileH,
+              aoMask[y * WORLD_GRID_SIZE + x],
+            );
           }
 
           // ── D. Tile hover glow (animated pulse) ──────────────────────────
