@@ -1,10 +1,10 @@
 # World Dynamics Catalog
 
 **Role:** World Dynamics Designer  
-**Date:** 2026-10-27 (wave 19)  
+**Date:** 2026-10-28 (wave 20)  
 **Canonical IDs:** `src/frontend/src/engine/worldFeatures.ts`  
 **Status:** Designed. Not wired into map generation, the RAF loop, turn advance, or combat damage formulas.  
-**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5) · `WDD-2026-09-23-001` (wave 6) · `WDD-2026-09-24-001` (wave 7) · `WDD-2026-09-25-001` (wave 8) · `WDD-2026-09-26-001` (wave 9) · `WDD-2026-09-27-001` (wave 10) · `WDD-2026-09-28-001` (wave 11) · `WDD-2026-09-29-001` (wave 12) · `WDD-2026-10-21-001` (wave 13) · `WDD-2026-10-22-001` (wave 14) · `WDD-2026-10-23-001` (wave 15) · `WDD-2026-10-24-001` (wave 16) · `WDD-2026-10-25-001` (wave 17) · `WDD-2026-10-26-001` (wave 18) · `WDD-2026-10-27-001` (wave 19)
+**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5) · `WDD-2026-09-23-001` (wave 6) · `WDD-2026-09-24-001` (wave 7) · `WDD-2026-09-25-001` (wave 8) · `WDD-2026-09-26-001` (wave 9) · `WDD-2026-09-27-001` (wave 10) · `WDD-2026-09-28-001` (wave 11) · `WDD-2026-09-29-001` (wave 12) · `WDD-2026-10-21-001` (wave 13) · `WDD-2026-10-22-001` (wave 14) · `WDD-2026-10-23-001` (wave 15) · `WDD-2026-10-24-001` (wave 16) · `WDD-2026-10-25-001` (wave 17) · `WDD-2026-10-26-001` (wave 18) · `WDD-2026-10-27-001` (wave 19) · `WDD-2026-10-28-001` (wave 20)
 
 These features exist so a long-lived character still meets new spatial and risk decisions after the 22 live map modifiers and lava / ice / spikes have been seen many times. Variation comes from **rarity weights** and **relative difficulty versus same-tier content**, not from “unlocks at level N”.
 
@@ -40,7 +40,7 @@ Hard product rules this catalog must not break:
 | HP taxes | fraction of **current max HP** so a seam still matters at 1000 HP |
 | Slots per map | tile 55% · encounter 25% · event 15% · max 3 features |
 | Death Realm | no features |
-| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate, no Twilight Gate, no Ash Gate, no Hearth Gate, no Wane Gate, no Clean Gate, no Still Gate, no Tally Gate, no Mercy Bell, no Mark Gate, no Incant Gate, no Vow Gate, no Stride Gate, no Near Gate, no Ready Gate, no Match Gate (portal-filter + run integrity) |
+| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate, no Twilight Gate, no Ash Gate, no Hearth Gate, no Wane Gate, no Clean Gate, no Still Gate, no Tally Gate, no Mercy Bell, no Mark Gate, no Incant Gate, no Vow Gate, no Stride Gate, no Near Gate, no Ready Gate, no Match Gate, no Poise Gate (portal-filter + run integrity) |
 | Live modifiers | the existing 22 still roll on their own two-roll; this catalog does not replace them |
 
 `pickWeightedFeatures` never receives player level.
@@ -4197,6 +4197,218 @@ SOLVABILITY: Does not add walls. Tax is not a wall.
 COMBAT_RULES: End-of-turn challenge HP. Match check is remaining AP equals remaining MP. Summons pay it. No skipped turns.  
 COUNTERPLAY: End turns mismatched; accept the tax to hold a matched kit; shove a foe after they have already acted.
 
+## Wave 20 (2026-10-28)
+
+Twentieth-wave seams so a long-lived character still meets new decisions after waves 1–19 have been seen many times. Same rarity weights and relative difficulty. Same overlay contract. Do not clone lava / ice / spikes, the live 22 modifiers, or wave-1 through wave-19 ids. Axis: remaining MP equals max MP — not remaining AP equals max AP (Ready), remaining AP 0 (Spent / Empty), remaining MP 0 (Plant), or remaining AP equals remaining MP (Match).
+
+### WF-HAZ-POISE_SEAM
+
+WORLD_FEATURE_ID: WF-HAZ-POISE_SEAM  
+NAME: Poise Seam  
+MECHANIC: Poised-slate seams. Stepping on them costs 4% of the unit’s current max HP only while remaining MP equals max MP. Any spent MP this turn makes the seam free floor. Walkable. Distinct from Ready Sill / Ready Hour (remaining AP equals max AP), Plant Font (heal at remaining MP 0), Match Seam (remaining AP equals remaining MP), Last Seam (dump-last-MP tax), Spent Seam (dump-last-AP tax), and Trip Cache (before any MP this map).  
+PLAYER_DECISION: Cut through after spending any MP this turn, stay poised and pay, or spend MP to path around.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: common (weight 40)  
+VISUAL: Poise seam, `#2a3020` wash, still-foot glyph.  
+SOLVABILITY: Floor only. Never on spawn±3 or portals. Never the only cell in a corridor (does not block).  
+COMBAT_RULES: Challenge HP recorders. Wounded AI treats a poised seam step like lava. Counts toward `MAX_HAZARD_TILES` (4–8 tiles).  
+COUNTERPLAY: Spend any MP first then cross, walk around, teleport (ground/self metadata), or send a summon that has already walked.
+
+### WF-HAZ-POISE_CINDER
+
+WORLD_FEATURE_ID: WF-HAZ-POISE_CINDER  
+NAME: Poise Cinder  
+MECHANIC: A single cinder orb. At round start it steps one tile toward the living unit whose remaining MP currently equals max MP (painted still-foot chevron). Ties prefer the lowest combatant id. If nobody is poised, it sits still. Landing on a unit costs 5% max HP. Distinct from Busy Cinder (most AP spent last round), Lean Cinder (fewest remaining AP), Cast Cinder (last SpellConfig spender), Hunting Lantern (last MP spender), Hurt Cinder (lowest HP%), Match Cinder (remaining AP equals remaining MP), and Plant Picket (stands at remaining MP 0).  
+PLAYER_DECISION: Spend any MP so it sits or hunts a still-stocked foe, stay poised to bait it, or step off its still-foot chevron.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare (weight 8)  
+VISUAL: Poise cinder, `#283018` wash, still-foot chevron.  
+SOLVABILITY: Never starts on spawn/portal. A floor path around the orb remains. Not a wall.  
+COMBAT_RULES: Round-start 1-tile step. Challenge HP. No AP/MP spend, no skipped turns. 1 hazard budget. Reads remaining MP and max MP, never a spell name.  
+COUNTERPLAY: Spend any MP so it sits; leave a foe poised and end off its still-foot chevron; push/attract a poised foe onto that cell.
+
+### WF-TRP-POISE_PLATE
+
+WORLD_FEATURE_ID: WF-TRP-POISE_PLATE  
+NAME: Poise Plate  
+MECHANIC: A visible rune plate. Stepping onto it after spending any MP this turn is free and leaves the plate armed. The first step onto it this map while remaining MP equals max MP costs 8% max HP once; then the plate becomes floor. Distinct from Glyph Plate (any enter), Chevron Plate (one painted facing), Skew Plate (diagonal enter), Spent Plate (remaining AP 0), Dash Plate (after an MP spend), Camp Plate (end-turn), and Match Plate (remaining AP equals remaining MP).  
+PLAYER_DECISION: Step on after spending MP, stay poised and spend the trap, or bait an enemy in while they still have a full movement stock.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon (weight 20)  
+VISUAL: Poise plate, `#243018` wash, always-visible still-foot rune.  
+SOLVABILITY: Walkable before and after. Never hidden. Never on spawn/portals.  
+COMBAT_RULES: One-shot step trigger while remaining MP equals max MP. Challenge HP. No name-based trap lookup.  
+COUNTERPLAY: Enter after spending MP; send a still-stocked summon; shove a poised foe on; ignore it.
+
+### WF-TER-POISE_PANE
+
+WORLD_FEATURE_ID: WF-TER-POISE_PANE  
+NAME: Poise Pane  
+MECHANIC: A still-foot ice sheet occupies a cell: units may walk through it, but it blocks LoS. Adjacent 1 AP (no spell) smashes it to clear floor only while remaining MP equals max MP before the spend. A walked smash is illegal and spends nothing. Distinct from Frost Pane (1 AP smash always), Match Pane (smash while remaining AP equals remaining MP), Brace Column (walk+LoS brace/smash), Reed Screen (open LoS), Slit Wall (rotate a facing), and Hush Curtain (blocks spells).  
+PLAYER_DECISION: Stay unwalked then spend 1 AP for LoS, hide behind the pane, or walk through and accept the blind.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Poise pane, `#2a3828` wash, crack chips on smash.  
+SOLVABILITY: Does not block walk. Smash is optional. Never on spawn/portals.  
+COMBAT_RULES: 1 AP occupancy action, legal only while remaining MP equals max MP before the spend. No damage. Wall for LoS until smashed. Walk occupancy is floor.  
+COUNTERPLAY: Walk through; smash before walking when a linear shot is worth 1 AP; stand behind it against linear spells.
+
+### WF-OBS-POISE_SILL
+
+WORLD_FEATURE_ID: WF-OBS-POISE_SILL  
+NAME: Poise Sill  
+MECHANIC: A short-path corridor cell starts as a wall. It becomes floor for the rest of the map after the player ends a turn with remaining MP equal to max MP. Distinct from Ready Sill (remaining AP equals max AP), Spent Sill (remaining AP 0), Plant Font (heal at remaining MP 0), Match Sill (remaining AP equals remaining MP), Hale Sill (≥80% HP), and Gale Bite (plant or pay to move).  
+PLAYER_DECISION: End a turn without spending MP to open the short path, take the long way, or wait until a round you already planned to stand still.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Poise sill, `#243020` wash, still-foot pip that flips open.  
+SOLVABILITY: Place only when a second spawn→portal route already exists. Evaluate solvability as if the sill were already a wall. Never the only exit.  
+COMBAT_RULES: Wall occupancy until a player end-of-turn with remaining MP equal to max MP. No damage.  
+COUNTERPLAY: Take the long path; open it on a turn you already expected not to walk; teleport past if metadata allows.
+
+### WF-ZON-POISE_FONT
+
+WORLD_FEATURE_ID: WF-ZON-POISE_FONT  
+NAME: Poise Font  
+MECHANIC: A still-foot basin. The first unit to end a turn here this map heals 8% max HP only if remaining MP equals max MP; then the tile dries. Ending here after spending any MP does nothing and does not dry it. Enemies can drink it. Distinct from Ready Hour (remaining AP equals max AP), Empty Font (remaining AP 0), Plant Font (remaining MP 0), Match Font (remaining AP equals remaining MP), Pair Font (Chebyshev ≤ 1), Alone Font (no neighbor), and Shrine Pool (unconditional first drink).  
+PLAYER_DECISION: End unwalked on the basin for the heal, deny the enemy the basin, or ignore it.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Poise font, `#1a3018` wash, rising still-foot mote.  
+SOLVABILITY: Walkable. Optional. Never on spawn/portals.  
+COMBAT_RULES: Zone tick, not a spell. Player HP persist via `saveBattleStats` on the progress lock.  
+COUNTERPLAY: Step on it without walking; shove a drinker off; ignore when you already spent MP.
+
+### WF-TEL-POISE_STEP
+
+WORLD_FEATURE_ID: WF-TEL-POISE_STEP  
+NAME: Poise Step  
+MECHANIC: Two linked still-foot cyan pads. Entering one for 1 MP exits the other only while remaining MP equals max MP before the spend. Otherwise the MP is not spent and you stay. If the exit is occupied, the travelers swap. Distinct from Empty Step (remaining AP 0), Spare Step (leftover AP), File Step (on-axis), Skew Step (off-axis), Match Step (remaining AP equals remaining MP), Plant Font (heal at remaining MP 0), and Ready Sill (remaining AP equals max AP).  
+PLAYER_DECISION: Spend the first MP of the turn to skip, walk first and lose the pads, or leave a pad as an enemy escape.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Paired still-foot pads, `#1a3820` wash, pulse only while stock is full.  
+SOLVABILITY: Both on floor, not on spawn/portals. The map is solvable without using them.  
+COMBAT_RULES: 1 MP from the unit’s current MP, legal only while remaining MP equals max MP before the spend. Not a teleport spell — do not key off `effectCategory`.  
+COUNTERPLAY: Stand on the exit to force a swap; ignore the pair; spend MP walking so you cannot use it.
+
+### WF-PRT-POISE_GATE
+
+WORLD_FEATURE_ID: WF-PRT-POISE_GATE  
+NAME: Poise Gate  
+MECHANIC: An extra sealed portal with a still-foot pip. It is not an exit until the player has ended a turn with remaining MP equal to max MP this map. Then entering rolls a random eligible overworld map and pays a hard `applyRewards` grant. It is never the only portal. Distinct from Ready Gate (remaining AP equals max AP), Match Gate (remaining AP equals remaining MP), Spent Sill (0 AP wall), Still Gate (no-fight), Hearth Gate (full HP), Empty Step (0 AP pads), Near Gate (adjacent hostile), and Plant Font (heal at remaining MP 0).  
+PLAYER_DECISION: End a turn without spending MP to arm a bonus gamble exit, or take the stable portal you can already see.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic (weight 3)  
+VISUAL: Sealed portal with still-foot pip, `#203018` wash, pip flips open when armed.  
+SOLVABILITY: Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm. Unarmed it does not count as an exit.  
+COMBAT_RULES: Arm keys off a player end-of-turn with remaining MP equal to max MP. Entry is a portal transition. Bonus via `applyRewards` on the persist lock. Death-realm guards still block entry.  
+COUNTERPLAY: Ignore it. The stable exit always works.
+
+### WF-INV-POISE_FILE
+
+WORLD_FEATURE_ID: WF-INV-POISE_FILE  
+NAME: Poise File  
+MECHANIC: Two extra same-tier elites (hard threat) share a painted file. The first (painted still-foot pennant) cannot spend AP until the second is dead OR the player ends a turn with remaining MP equal to max MP. Occupancy-walks stay legal. Victory pays hard reward multiplier. Distinct from Ready File (remaining AP equals max AP unlock), Match File (remaining AP equals remaining MP unlock), Sheath File (second AP-lock), Mute File (SpellConfig-lock), Guard File (walk-lock), and Sleeping Vanguard (world-asleep).  
+PLAYER_DECISION: End a turn without spending MP so the poised elite can act, burst the free spender first, or walk to a portal and leave.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Two pennants, still-foot on the first, `#283020` wash.  
+SOLVABILITY: Adds enemies only up to `MAX_ENEMIES`. Skip if the roster cannot fit 2. In dungeon / boss rush they count as hostiles for map-clear.  
+COMBAT_RULES: Poise lock is occupancy/turn state, not a buff spell. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: Leave without engaging (exploration); kill the free spender first; stand still when you want both acting.
+
+### WF-ELT-POISE_PICKET
+
+WORLD_FEATURE_ID: WF-ELT-POISE_PICKET  
+NAME: Poise Picket  
+MECHANIC: One elite (same-tier × hard) occupies a painted post only while the player’s remaining MP equals max MP. Spend any MP and the post is empty floor (exploration: they leave, no purse). Touch to fight (hard purse). Dungeon / boss rush: they stand from map start — required for map-clear. Distinct from Ready Picket (remaining AP equals max AP), Match Picket (remaining AP equals remaining MP), Plant Picket (remaining MP 0), High Picket (≥80% HP), Spell Picket (after a cast), Spent Sill (0 AP wall), and Drift Sentinel (odd-round).  
+PLAYER_DECISION: Spend any MP and walk past (exploration), stay unwalked and fight for the hard purse, or (in a run) fight them because they already stand.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare  
+VISUAL: Stationary elite with a still-foot staff, `#203018` wash.  
+SOLVABILITY: Post is floor. Exit reachable without touching. Counts as 1 enemy. In a run they are present from the start.  
+COMBAT_RULES: Appearance keys off remaining MP equaling max MP. World contact starts a normal battle. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: In exploration, spend MP and pass; stay poised when you want the purse; in a run, fight them.
+
+### WF-TRS-POISE_CACHE
+
+WORLD_FEATURE_ID: WF-TRS-POISE_CACHE  
+NAME: Poise Cache  
+MECHANIC: A still-foot chest. 1 AP adjacent opens it only while remaining MP equals max MP before that spend: medium `applyRewards` grant, no guardian. A walked open is illegal and spends nothing. Distinct from Round Cache (rounds 1–2), Late Cache (from round 3), Plant Cache (remaining MP 0), Match Cache (remaining AP equals remaining MP), Trip Cache (before any MP this map), Empty Font (heal at remaining AP 0), and Patience Cache (wait-or-open).  
+PLAYER_DECISION: Stay unwalked then spend 1 AP to open, walk first and lose the chest this turn, or walk past.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Still-foot chest, `#2a3020` wash, gold trim.  
+SOLVABILITY: Adjacent-open, not a wall. Optional.  
+COMBAT_RULES: AP cost, not a spell. Credits via persist-lock `applyRewards`. Failed walked open spends nothing.  
+COUNTERPLAY: Skip; open before walking; ignore it after you have already moved.
+
+### WF-SPL-POISE_TUTOR
+
+WORLD_FEATURE_ID: WF-SPL-POISE_TUTOR  
+NAME: Poise Tutor  
+MECHANIC: One same-tier enemy (medium threat) carries 1 extra `usableByEnemy` spell. If the player ends a turn with remaining MP equal to max MP while they still live (any distance), the player gains that spell id as a **single remaining cast** this map. Killing them before that teach grants the purse but not the one-cast. They stay hostile after the teach. Distinct from Ready Tutor (remaining AP equals max AP), Match Tutor (remaining AP equals remaining MP), Plant Tutor (remaining MP 0), Close Tutor (adjacent), Live Tutor (repeating loan), Empty Font (heal at remaining AP 0), and Steel Hour (skip paid-AP spells).  
+PLAYER_DECISION: End a turn without spending MP while they live for a one-shot, burst-kill for the purse, or ignore them.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Enemy with a hovering still-foot orb, `#183018` wash.  
+SOLVABILITY: Prefer replacing one existing spawn; else +1 if under the enemy cap. Must stay reachable.  
+COMBAT_RULES: Metadata only (`usableByEnemy`, `targetType`, costs). One-cast does not call `upgradeSpell` and does not persist `spellLevel*` arrays.  
+COUNTERPLAY: Kite and ignore; stand still for the teach then leave; burst-kill if you want the purse more than the cast.
+
+### WF-RSK-POISE_OATH
+
+WORLD_FEATURE_ID: WF-RSK-POISE_OATH  
+NAME: Poise Oath  
+MECHANIC: End a turn on the still-foot inlay to flag this map. If the next `applyRewards` happens while remaining MP equals max MP, that credit uses the hard multiplier. If any MP was already spent at credit, the flag pays nothing extra. Distinct from Ready Hour (ended remaining AP equals max AP at least once), Match Oath (remaining AP equals remaining MP at credit), Spent Oath (remaining AP 0), Plant Oath (remaining MP 0), Spare Oath (leftover AP), and Pair Oath (Chebyshev ≤ 1 at credit).  
+PLAYER_DECISION: Flag a fight you will cash out without having walked, or stay unflagged and spend MP freely.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Still-foot inlay, `#1a2818` wash, unmoved glyph.  
+SOLVABILITY: Optional floor tile. Map is solvable if never used.  
+COMBAT_RULES: Poise check is remaining MP equals max MP at the `applyRewards` enqueue. Multiplier on the next `applyRewards` only. Death still uses `saveBattleStats`.  
+COUNTERPLAY: Skip it. Use it only when you expect to stand unwalked at credit, or spend MP to void the flag.
+
+### WF-MOD-POISE_CAST
+
+WORLD_FEATURE_ID: WF-MOD-POISE_CAST  
+NAME: Poise Cast  
+MECHANIC: This map only: a combatant may spend a `SpellConfig` only while remaining MP equals max MP before that spend. After any MP spend (occupancy-walk or 1 MP tile) a `SpellConfig` spend is illegal this turn. Attack Nearest, summons, occupancy-walks, and 0-spell turns are unchanged. Distinct from Walk Lock (after an occupancy-walk, no casts — a 1 MP pad may still leave casts legal), Once Cast (at most one `SpellConfig` per turn), Cast Lock (after a spell, no walks), Match Cast (remaining AP equals remaining MP), Short Fuse (cooldown spells locked round 1), Tight Grip (0-MP spells cost 1), and Heavy Incant (high-AP spells cost MP).  
+PLAYER_DECISION: Cast before walking, Attack Nearest after moving, summon a second caster, or skip the fight.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Still-foot wick overlay, `#243020` wash, spent-stock glyph on spells after an MP spend.  
+SOLVABILITY: No tile change. Attack Nearest, summons, occupancy-walks, and unwalked-cast turns remain usable.  
+COMBAT_RULES: Reads remaining MP equals max MP before each `SpellConfig` spend. Attack Nearest is not a spell. No damage rewrite. Any MP spend, including 1 MP tiles, spends the stock.  
+COUNTERPLAY: Cast first then walk; Attack Nearest after moving; summon a caster; refuse the fight.
+
+### WF-EVT-POISE_HOUR
+
+WORLD_FEATURE_ID: WF-EVT-POISE_HOUR  
+NAME: Poise Hour  
+MECHANIC: This map only: if the player ended at least one turn with remaining MP equal to max MP, the next `applyRewards` uses the hard multiplier. Always ending after spending MP leaves rewards unchanged. Distinct from Ready Hour (remaining AP equals max AP), Match Hour (remaining AP equals remaining MP), Spent Oath (remaining AP 0), Plant Oath (remaining MP 0), Vacant Hour (skip summons), and Poise Gate (arm an extra portal).  
+PLAYER_DECISION: End at least one turn without spending MP for a hard purse, or walk every turn and accept normal rewards.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Olive corona, `#182818` wash, still-foot disc at the horizon.  
+SOLVABILITY: No blocks. Leaving is always legal.  
+COMBAT_RULES: Poise means remaining MP equals max MP at player end-of-turn. Multipliers on persist-lock `applyRewards` only. Does not rewrite `combatMath`.  
+COUNTERPLAY: Stand still once then spend freely; ignore the overlay and walk every turn; leave without fighting.
+
+### WF-ENV-POISE_DRAFT
+
+WORLD_FEATURE_ID: WF-ENV-POISE_DRAFT  
+NAME: Poise Draft  
+MECHANIC: At the end of each combatant turn, if remaining MP equals max MP they pay 3% max HP. Ending the turn after spending any MP is shelter. Painted still-foot rings sit around bodies that currently hold a full movement stock. Distinct from Spare Draft (dump leftover AP), Stride Draft (dump leftover MP), Match Draft (remaining AP equals remaining MP), Isolation Chill (nobody within 3), Pair Draft (Chebyshev ≤ 1), Ready Hour (remaining AP equals max AP), Gale Bite (plant or pay to move), and Empty Font (heal at remaining AP 0).  
+PLAYER_DECISION: Spend any MP before ending the turn, stay poised and pay, or shove a foe so they end still-stocked.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: uncommon  
+VISUAL: Poise-draft wash `#242818`, still-foot rings.  
+SOLVABILITY: Does not add walls. Tax is not a wall.  
+COMBAT_RULES: End-of-turn challenge HP. Poise check is remaining MP equals max MP. Summons pay it. No skipped turns.  
+COUNTERPLAY: Spend any MP then end; accept the tax to hold an unwalked kit; shove a foe after they have already acted.
+
 ---
 
 ## Composition examples (same level, different maps)
@@ -4295,10 +4507,15 @@ COUNTERPLAY: End turns mismatched; accept the tax to hold a matched kit; shove a
 92. Match Cinder + Match Font + Match Draft — bait a matched hunter, drink equalized, end mismatched or pay.  
 93. Match Sill + Match Step — equalize to open the short path vs 1 MP matched skip.  
 94. Match File + Match Oath — equalize so the match elite can act, then cash out matched.  
-95. Match Cache + Match Hour — equalize then open, then end matched once for a hard purse.
+95. Match Cache + Match Hour — equalize then open, then end matched once for a hard purse.  
+96. Poise Seam + Poise Picket + Poise Cast — full-stock step tax, spend MP to skip an elite, cast before walking.  
+97. Poise Cinder + Poise Font + Poise Draft — bait a still-stocked hunter, drink unwalked, spend any MP or pay.  
+98. Poise Sill + Poise Step — stand still to open the short path vs 1 MP first-step skip.  
+99. Poise File + Poise Oath — stand still so the poised elite can act, then cash out unwalked.  
+100. Poise Cache + Poise Hour — open before walking, then end unwalked once for a hard purse.
 
 None of these require a higher character level. The warband is scarier because it is a larger same-tier pack, not because it is “level 40 content”.
 
 ## Implementation gate
 
-Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, **WDD-2026-09-22-001**, **WDD-2026-09-23-001**, **WDD-2026-09-24-001**, **WDD-2026-09-25-001**, **WDD-2026-09-26-001**, **WDD-2026-09-27-001**, **WDD-2026-09-28-001**, **WDD-2026-09-29-001**, **WDD-2026-10-21-001**, **WDD-2026-10-22-001**, **WDD-2026-10-23-001**, **WDD-2026-10-24-001**, **WDD-2026-10-25-001**, **WDD-2026-10-26-001**, or **WDD-2026-10-27-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
+Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, **WDD-2026-09-22-001**, **WDD-2026-09-23-001**, **WDD-2026-09-24-001**, **WDD-2026-09-25-001**, **WDD-2026-09-26-001**, **WDD-2026-09-27-001**, **WDD-2026-09-28-001**, **WDD-2026-09-29-001**, **WDD-2026-10-21-001**, **WDD-2026-10-22-001**, **WDD-2026-10-23-001**, **WDD-2026-10-24-001**, **WDD-2026-10-25-001**, **WDD-2026-10-26-001**, **WDD-2026-10-27-001**, or **WDD-2026-10-28-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
