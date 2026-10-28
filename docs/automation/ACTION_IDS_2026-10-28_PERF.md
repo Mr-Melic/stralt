@@ -1,4 +1,8 @@
-# ACTION_IDs — 2026-10-28 Performance Auditor (canvas / RAF / particles)
+# ACTION_IDs — 2026-10-28 Performance Auditor
+
+Two passes same day:
+1. Canvas / RAF / particles → PERF-191..198 (below).
+2. React / subscriptions / modals / timers → PERF-199..204 (appended).
 
 Did **not** change WorldExploration, the world RAF schedule, or gameplay timing.
 Did **not** re-file PERF-2026-08-31-001..010, 09-01-011..036, 09-02-037..060,
@@ -11,13 +15,13 @@ Explicitly **not** re-reported (user / residual): fractional-DPR `canvas.width`
 clear (187), occupancy BFS `shift` + `collectOccupiedCells` (189), combatant
 per-pixel `fillRect` (184 / 066), barrier 6-layer live paths (185 / 098), idle
 juice skip (183 / #1122), owner-tint `shadowBlur` (178 / #1059 / 067), starfield
-pause (001 / 049).
+pause (001 / 049), Chat scrollHeight (190), Spellbook full grid (186).
 
-No SAFE disjoint implementation this increment: remaining player-visible canvas
-fixes sit on WorldExploration / effects.ts (#1122) / LandingPage / pieceArt.ts
-(#1059 / #966) / barrierRender.ts / occupancy.ts — all already in the
-oldest-first stack. Prefer landing already-open SAFE PRs #350, #392/#412, #429,
-#447, #511, #594, #643, #687, #745, #797, #841, #889, #966, #1059, #1122.
+No SAFE disjoint implementation for stacked leftovers (WX / occupancy /
+ChatPanel / soundEngine / App / vite / LandingPage / DraggablePanel /
+canvasLoopActivity / pieceArt / effects). Prefer landing already-open SAFE PRs
+#350, #392/#412, #429, #447, #511, #594, #643, #687, #745, #797, #841, #889,
+#966, #1059, #1122, #1185. React-pass SAFE candidates: 201, 204.
 
 ## Residual on HEAD (already ledgered; still open)
 
@@ -273,3 +277,130 @@ AUTONOMY:
 REGRESSION_RISK: Stale `inBattle` / screenPos in a reused closure can draw whirlpools during battle cubes or misplace portals after camera move.
 VALIDATION_REQUIRED: Enter battle (teal portal cubes); leave; multi-portal depth sort vs walls/units still correct.
 STATUS: NEW
+
+---
+
+# Second pass — React / subscriptions / modals / timers (same day)
+
+Did **not** re-file 001–198 (including the canvas/RAF 191–198 block above).
+Focus: App / main / GameFlow / ChatPanel / BattleUI / Spellbook / BuffShop /
+Achievements / GameOver / Landing / CharacterSelection / Initiative /
+DraggablePanel / hooks / soundEngine. RAF internals skipped except React
+setState from RAF (none newly filed here beyond residual 181).
+
+Prefer landing already-open SAFE PRs #350, #392/#412, #429, #447, #511, #594,
+#643, #687, #745, #797, #841, #889, #966, #1059, #1122, #1185.
+
+---
+
+ACTION_ID: PERF-2026-10-28-199
+TITLE: Canvas ResizeObserver mount effect permanently no-ops while the map is still generating
+CATEGORY: runtime-performance
+PRIORITY: high
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx (canvasSize init ~1165; RO effect ~13945–14010 deps `[]`; early `!currentMap` return ~17440; `canvasAreaRef` JSX ~17861; map init ~13722)
+CURRENT_BEHAVIOUR: `canvasSize` starts at `{ width: 1200, height: 800 }`. The only `setCanvasSize` call is inside the ResizeObserver `applySize` effect, which captures `canvasAreaRef.current` once with `[]` deps. On first paint `currentMap` is still null (tier config async), so the effect sees `area == null` and returns without observing. When the map later mounts the canvas area, the effect does **not** re-run. Drawing and DPR sizing stay locked to the 1200×800 default for the whole session; CSS stretches that buffer to the live viewport. Distinct from PERF-147 (RO identity churn when it *does* fire), PERF-176 (tileCornerCache on window.resize), and PERF-187 (fractional-DPR clear of an already-chosen size).
+DESIRED_BEHAVIOUR: Bind (or re-bind) the observer when `canvasAreaRef` actually mounts — e.g. effect deps on `currentMap` / `showGameOver`, or a layout effect that retries until `area` is non-null. Keep the 50ms debounce and mid-frame deferral.
+EVIDENCE: `setCanvasSize` appears only at applySize ~13968; RO effect deps are `[]` at ~14010; `currentMap` useState init is `null` at ~1101; first paint hits the Generating-world early return before `ref={canvasAreaRef}` at ~17862.
+RECOMMENDED_ACTION: WorldExploration is stacked — do not land here. A tiny `bindCanvasAreaResize` helper is fine once WX can call it from a deps-correct effect. Do not change hit-test geometry in the same PR.
+AUTONOMY:
+- HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: Re-binding on every map change must disconnect the previous observer; a double-observe can fight the debounce and clear the canvas mid-frame (same class as 187).
+VALIDATION_REQUIRED: Cold world entry on a phone-width and ultrawide desktop; `canvasSize` matches the canvas CSS box; rotate / URL-bar resize still updates; portal transition does not leave a 0×0 observer.
+STATUS: NEW
+DISJOINT_SAFE_HELPER: No — observer bind site is inside WorldExploration.tsx (stacked).
+
+---
+
+ACTION_ID: PERF-2026-10-28-200
+TITLE: Game Over early-return leaves the 1 Hz watchdog restarting a null-canvas RAF every ~2s
+CATEGORY: runtime-performance
+PRIORITY: high
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx (animate null-ctx path ~8747–8759; watchdog ~13776–13791; `showGameOver` early return ~17425–17438; death `setInBattle(false)` then `setShowGameOver(true)` ~13307–13310)
+CURRENT_BEHAVIOUR: `showGameOver` early-returns **after** hooks, so WorldExplorationInner stays mounted: the RAF mount effect does **not** clean up and starfield stays paused. The canvas node leaves the tree, so the next `animate` frame reads `canvasRef.current == null`, takes the `!_animCtx` branch, and `return`s **without** chaining `requestAnimationFrame`. The 1 Hz watchdog still runs; after `performance.now() - lastFrameTime > 2000` it logs `[GameLoop] Watchdog: loop appears dead` and restarts RAF into the same null-canvas dead-end. During a multi-second death modal this repeats every ~2s. On Respawn the canvas remounts but paint waits for the next watchdog tick (up to ~1s). Distinct from PERF-188 (HUD child remount / overlay desire — its evidence that the RAF *effect* unmounts is incorrect for an after-hooks early return), PERF-010 (hidden-tab watchdog), and PERF-148 (restore clock skew).
+DESIRED_BEHAVIOUR: Keep the canvas mounted under Game Over (188), **or** pause the watchdog while `showGameOver` / canvas is detached and explicitly `requestAnimationFrame` on Respawn when the canvas ref is back. Do not change death persist or the 1.5s Death Realm gate.
+EVIDENCE: Early return after hooks ~17425; animate null path returns without rAF ~8748–8759; watchdog setInterval 1000 ms restarts animateRef ~13778–13790; death path `setInBattle(false); setShowGameOver(true)` ~13309–13310.
+RECOMMENDED_ACTION: Prefer the 188 overlay fix (keeps canvas + loop). If overlay slips, gate the watchdog on `canvasRef.current` / `showGameOver`. WorldExploration is stacked.
+AUTONOMY:
+- HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: Pausing the watchdog without a Respawn kick can leave a black Death Realm until the player portals. Overlay must not let leftover enemy timers race `applyRewards`.
+VALIDATION_REQUIRED: Die in battle; death modal open ≥5s with no watchdog spam / no RAF churn; Respawn paints Death Realm within one frame; starfield stays paused until leave-world.
+STATUS: NEW
+DISJOINT_SAFE_HELPER: No — watchdog / animate live in WorldExploration.tsx (stacked). Overlay (188) is the clean fix.
+
+---
+
+ACTION_ID: PERF-2026-10-28-201
+TITLE: Chat getMessages poll resumes during Game Over because death clears inBattle
+CATEGORY: runtime-performance
+PRIORITY: medium
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/GameFlow.tsx (`isPaused={isInBattle || isTransitioning}` ~277); src/frontend/src/components/ChatPanel.tsx (poll effect ~942–957); src/frontend/src/components/WorldExploration.tsx (death `cleanupBattle` + `setInBattle(false)` + `setShowGameOver(true)` ~13307–13310); src/frontend/src/components/GameOverModal.tsx
+CURRENT_BEHAVIOUR: ChatPanel is a GameFlow **sibling** of WorldExploration, so the Game Over early-return does not unmount it. `_handlePlayerDeath` calls `cleanupBattle` and `setInBattle(false)` before showing Game Over, which clears GameFlow `isPaused`. The 2s `getMessages` interval therefore **resumes** for the whole death-modal dwell (canister round-trips under a still-mounted world hook tree). Distinct from PERF-177 (overworld / folded poll — same interval, different life-cycle) and PERF-188 (WX canvas/HUD remount).
+DESIRED_BEHAVIOUR: Keep chat paused for the Game Over overlay (treat death overlay like battle/transition). Battle-log unread and Clear log stay as they are.
+EVIDENCE: GameFlow passes `isPaused={isInBattle || isTransitioning}` only ~277; ChatPanel starts `setInterval(..., 2000)` when `!isPaused` ~942–955; death path sets `setInBattle(false)` then `setShowGameOver(true)` ~13309–13310.
+RECOMMENDED_ACTION: SAFE disjoint path: new `deathOverlayActivity.ts` flag set from `GameOverModal` mount/unmount; GameFlow ORs it into `isPaused`. Does **not** require editing ChatPanel or WorldExploration. Do not change the 2s overworld poll here (177).
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: Flag must clear on Respawn and on leave-world so overworld chat returns; a stuck true pauses chat forever.
+VALIDATION_REQUIRED: Die in battle; no `getMessages` while the death dialog is open; Respawn / Death Realm chat poll resumes when appropriate; folded unread still works in overworld.
+STATUS: NEW
+DISJOINT_SAFE_HELPER: Yes — `src/frontend/src/engine/deathOverlayActivity.ts` (+ GameOverModal mount + GameFlow `isPaused` OR). ChatPanel / WorldExploration untouched.
+
+---
+
+ACTION_ID: PERF-2026-10-28-202
+TITLE: DraggablePanel drag path forces layout via offsetWidth/offsetHeight on every mousemove
+CATEGORY: runtime-performance
+PRIORITY: medium
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/DraggablePanel.tsx (onMove ~646–676; clampPosition ~576–588; release snap ~689–697)
+CURRENT_BEHAVIOUR: PERF-012 coalesces React `setPosition` / `setSnapPreview` to one rAF, but `onMove` still reads `el.offsetWidth` and `el.offsetHeight` on **every** pointermove before queuing (and again inside `clampPosition` when used). Under the live world canvas, dragging Battle UI / Settings / Map Effects forces synchronous layout at input rate. Distinct from PERF-012 (setState coalesce), PERF-011 (attach-on-start listeners), and PERF-158 (resize/orientation listeners reading offset on window resize).
+DESIRED_BEHAVIOUR: Cache panel size at drag-start (and refresh from ResizeObserver); use the cached `w`/`h` for live snap + clamp during the gesture. Release snap may re-measure once.
+EVIDENCE: `const w = el.offsetWidth; const h = el.offsetHeight;` inside onMove ~662–663 before `requestAnimationFrame(flushPendingDrag)`; `clampPosition` also reads offsetWidth/Height ~580–581.
+RECOMMENDED_ACTION: DraggablePanel is stacked. Land a size-cache after those PRs, or extract `panelDragLayout.ts` once the file is free. Do not change snap distances.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: Stale size while content reflows mid-drag (fold toggle mid-gesture is already blocked by drag). Snap ghost must still match the panel box.
+VALIDATION_REQUIRED: Drag chat and battle panels quickly on a phone URL-bar resize; snap preview tracks; release edge-snaps; no extra world jank vs baseline.
+STATUS: NEW
+DISJOINT_SAFE_HELPER: Partial — a `panelDragLayout.ts` helper can own the cache math, but DraggablePanel.tsx (stacked) must call it.
+
+---
+
+ACTION_ID: PERF-2026-10-28-203
+TITLE: Always-mounted AchievementsPanel still subscribes to feats queries while closed
+CATEGORY: runtime-performance
+PRIORITY: medium
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/AchievementsPanel.tsx (hooks ~45–48 before `if (!isOpen) return null` ~196); src/frontend/src/components/WorldExploration.tsx (always mounts `<AchievementsPanel isOpen={achievementsOpen} />` ~17898; WX also calls `useGetAchievementConfigs` / `useGetPlayerAchievements` ~2166–2167)
+CURRENT_BEHAVIOUR: PERF-060 filed the always-mounted panel. What remains player-visible on HEAD: the closed panel still runs `useGetAchievementConfigs` + `useGetPlayerAchievements` **before** the early return, creating a second React Query observer on top of WorldExploration’s own subscriptions. Mid-fight unlock / claim invalidations therefore re-render both the ~19k-line world tree **and** the closed AchievementsPanel (hooks + null return). Distinct from PERF-050 (staleTime / focus on the feats query itself) and from PERF-060’s mount-shape note — this is the duplicate-observer cost while `isOpen === false`.
+DESIRED_BEHAVIOUR: Mount AchievementsPanel only when open, **or** split a presentational body so hooks run only while `isOpen`. Keep persistClaim on the WorldExploration lock.
+EVIDENCE: AchievementsPanel.tsx ~45–48 hooks unconditionally; ~196 `if (!isOpen) return null`; WX ~17898 always renders the component; WX ~2166–2167 already subscribes to the same keys.
+RECOMMENDED_ACTION: Conditional mount at the WX call site is smallest but touches WorldExploration (stacked). A body extract behind `isOpen` can live in a new file once WX passes children only when open.
+AUTONOMY:
+- HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: Unmount-on-close must not drop an in-flight `persistClaim`; reopen must show fresh claimed state from the shared query cache.
+VALIDATION_REQUIRED: Unlock a feat in battle with Feats closed — world still toasts; open Feats — rows match; claim through persist lock; no double Doka.
+STATUS: NEW
+DISJOINT_SAFE_HELPER: Partial — body extract is disjoint, but the always-mount call site is WorldExploration.tsx (stacked).
+
+---
+
+ACTION_ID: PERF-2026-10-28-204
+TITLE: Always-mounted BuffShop still hydrates and re-persists inventory while closed
+CATEGORY: runtime-performance
+PRIORITY: low
+CONFIDENCE: medium
+FILES_OR_SYSTEMS: src/frontend/src/components/BuffShop.tsx (`useState(loadInventory)` ~178–180; persist effect ~205–207; early return ~279); src/frontend/src/components/WorldExploration.tsx (`<BuffShop … isOpen={itemShopOpen} />` ~17908)
+CURRENT_BEHAVIOUR: BuffShop stays mounted with `isOpen={false}` (PERF-104 covers closure identity). Separately, on every world entry it `JSON.parse`s `${principal}_inventory` in the state initializer, then the persist `useEffect` writes the same blob back to localStorage on mount — while the modal returns null. Parent WorldExploration re-renders (wander / turn / HP) still execute those hooks. Distinct from PERF-104 (getLiveDoka / onDeductDoka identity) and PERF-130 (volume localStorage).
+DESIRED_BEHAVIOUR: Mount BuffShop only when open, or defer `loadInventory` / `saveInventory` until `isOpen` (and keep the in-battle use path working when the shop is open).
+EVIDENCE: BuffShop.tsx ~178–180 load on mount; ~205–207 save whenever `inventory` identity is set; ~279 `if (!isBuffShopOpen(isOpen)) return null`; WX always mounts ~17908.
+RECOMMENDED_ACTION: Gate the persist effect with `isBuffShopOpen(isOpen)` in BuffShop (BuffShop is **not** on the stacked-file list — SAFE there). Do not move inventory off `${principal}_inventory`.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: Gating persist on open must still flush a purchase made while open before close; battle item-use from a closed shop must keep using `inventoryRef` if that path stays mounted.
+VALIDATION_REQUIRED: World entry with Items closed — no spurious inventory rewrite storm; buy while open persists; consume in battle; reopen shows stacks.
+STATUS: NEW
+DISJOINT_SAFE_HELPER: Yes — fix can live entirely in BuffShop.tsx (not stacked) by gating the persist effect / lazy-loading inventory on open; no WX rewrite required for the persist gate.
