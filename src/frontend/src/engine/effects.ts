@@ -74,6 +74,9 @@ const HITSTOP_RESTORE_MS = 75;
 const FLOATTEXT_DEFAULT_COLOR = "#e0664a";
 // Safety net: hard cap on combined live effects to prevent runaway growth.
 const MAX_LIVE_EFFECTS = 100;
+// Reused when shake is off or residual intensity is below tick()'s 0.01 floor
+// (PERF-2026-10-28-192). Live shake still allocates a fresh {x,y}.
+const ZERO_SHAKE_OFFSET = { x: 0, y: 0 };
 // DEV-only perf log cadence.
 const PERF_LOG_INTERVAL_MS = 5000;
 
@@ -312,7 +315,12 @@ export class EffectsManager {
   }
 
   getShakeOffset(): { x: number; y: number } {
-    if (!JUICE.shake.enabled) return { x: 0, y: 0 };
+    // PERF-2026-10-28-192: idle overworld still sampled RNG + allocated {x,y}
+    // every RAF while intensity was 0. Match tick()'s residual clamp. Do not
+    // change the live (random - 0.5) * intensity * 2 formula.
+    if (!JUICE.shake.enabled || this.shakeState.intensity < 0.01) {
+      return ZERO_SHAKE_OFFSET;
+    }
     const i = this.shakeState.intensity;
     return {
       x: (Math.random() - 0.5) * i * 2,

@@ -17,11 +17,14 @@ per-pixel `fillRect` (184 / 066), barrier 6-layer live paths (185 / 098), idle
 juice skip (183 / #1122), owner-tint `shadowBlur` (178 / #1059 / 067), starfield
 pause (001 / 049), Chat scrollHeight (190), Spellbook full grid (186).
 
-No SAFE disjoint implementation for stacked leftovers (WX / occupancy /
-ChatPanel / soundEngine / App / vite / LandingPage / DraggablePanel /
-canvasLoopActivity / pieceArt / effects). Prefer landing already-open SAFE PRs
-#350, #392/#412, #429, #447, #511, #594, #643, #687, #745, #797, #841, #889,
-#966, #1059, #1122, #1185. React-pass SAFE candidates: 201, 204.
+Implemented this increment: PERF-2026-10-28-192 (`shakeOffsetActivity.ts` as
+the formula spec + inlined idle `getShakeOffset` in `effects.ts` with a
+reused `ZERO_SHAKE_OFFSET`). Did **not** union #1122's idle `tick()` skip —
+that import/tick hunk conflicts on `effects.ts` in oldest-first stack merge.
+Did **not** land 201 (GameFlow / GameOverModal stacked: #335/#421/#435/#490)
+or 204 (BuffShop stacked: #372/#408/#490/#526/#595). Prefer landing
+already-open SAFE PRs #350, #392/#412, #429, #447, #511, #594, #643, #687,
+#745, #797, #841, #889, #966, #1059, #1122, #1185.
 
 ## Residual on HEAD (already ledgered; still open)
 
@@ -30,7 +33,7 @@ canvasLoopActivity / pieceArt / effects). Prefer landing already-open SAFE PRs
 | 005 / 036 / 037 / 038 | Live floor/wall/hazard/AO/shimmer grain every RAF | WX stack |
 | 174 | Triple full-surface clear/fill every frame | #1009 |
 | 179 / 035 | Per-entity radial drop shadow | WX stack |
-| 183 | Idle EffectsManager tick skip | #1122 |
+| 183 | Idle EffectsManager tick skip | #1122 (left to that PR; not unioned) |
 | 184 | Combatant per-pixel `fillRect` | WX / pieceArt |
 | 185 / 098 | Barrier 6-layer live paths | HUMAN (`barrierRender.ts`) |
 | 187 | Fractional-DPR `canvas.width` clear every RAF | WX stack |
@@ -93,12 +96,12 @@ EVIDENCE:
     const _shake = effectsManagerRef.current.getShakeOffset();
     ctx.translate(_shake.x, _shake.y);
 ```
-RECOMMENDED_ACTION: Land after / union with #1122 (`effects.ts`). Pure zero-path early return is SAFE once that file is free. Do not change JUICE timing constants.
+RECOMMENDED_ACTION: Inline the idle early-return in `EffectsManager.getShakeOffset` (no new import — #1122 owns the `tick()` skip import). Keep `shakeOffsetActivity.ts` as the formula spec. Do not change JUICE timing constants or the 16ms tick argument.
 AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: Shake during hit-stop / kill must still jitter; disabled-shake path must stay at 0,0.
-VALIDATION_REQUIRED: Overworld idle; land a crit (shake visible); juice idle skip (#1122) still avoids tick work.
-STATUS: NEW
+VALIDATION_REQUIRED: `node --experimental-strip-types --test src/frontend/src/engine/shakeOffsetActivity.test.ts`; overworld idle; land a crit (shake visible).
+STATUS: IMPLEMENTED
 
 ---
 
