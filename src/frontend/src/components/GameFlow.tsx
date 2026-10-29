@@ -2,6 +2,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Crown, LogOut, ShoppingCart, Trophy } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  isDeathOverlayActive,
+  shouldPauseChatPoll,
+  subscribeDeathOverlayActive,
+} from "../engine/deathOverlayActivity";
 import { useGetCallerDokaBalance } from "../hooks/useAdminQueries";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useGetLeaderboard } from "../hooks/useLeaderboardQueries";
@@ -68,6 +73,13 @@ const GameFlow: React.FC<GameFlowProps> = ({
   const [isInBattle, setIsInBattle] = useState(false);
   const prevIsInBattleRef = useRef(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [deathOverlayActive, setDeathOverlayActiveState] =
+    useState(isDeathOverlayActive);
+  useEffect(() => {
+    return subscribeDeathOverlayActive(() => {
+      setDeathOverlayActiveState(isDeathOverlayActive());
+    });
+  }, []);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [showBossGuide, setShowBossGuide] = useState(false);
@@ -274,7 +286,11 @@ const GameFlow: React.FC<GameFlowProps> = ({
           battleLogEntries={battleLogEntries}
           onClearBattleLog={clearBattleLog}
           activeEffects={activeEffects}
-          isPaused={isInBattle || isTransitioning}
+          isPaused={shouldPauseChatPoll({
+            inBattle: isInBattle,
+            transitioning: isTransitioning,
+            deathOverlay: deathOverlayActive,
+          })}
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
           debugContextRef={debugContextRef}
           // debugLogs removed — ChatPanel now sources from structured debugLogger buffer
