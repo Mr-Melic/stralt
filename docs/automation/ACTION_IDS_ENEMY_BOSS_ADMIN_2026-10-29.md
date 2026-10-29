@@ -1,0 +1,24 @@
+# ACTION_IDs — 2026-10-29 Enemy & Boss Admin Content Designer
+
+Durable ledger for implementers and the Report Action Orchestrator.  
+Source of every record: Enemy & Boss Admin Content Designer.  
+Prior contract: [`ENEMY_BOSS_ADMIN_DESIGN_2026-08-31.md`](./ENEMY_BOSS_ADMIN_DESIGN_2026-08-31.md).  
+Re-audit: [`ENEMY_BOSS_ADMIN_REAUDIT_2026-10-29.md`](./ENEMY_BOSS_ADMIN_REAUDIT_2026-10-29.md).  
+Verified against `origin/main` @ `0f5363f` (unchanged since the 2026-09-21 EBA re-audit).
+
+**No new ACTION_ID records this run.** `origin/main` is still `0f5363f`. Open draft PR [#360](https://github.com/Mr-Melic/stralt/pull/360) already covers `EBA-2026-09-21-001` (drive EnemyDefinition spawn through `engine/spawnPolicy.ts`). Open PRs [#404](https://github.com/Mr-Melic/stralt/pull/404), [#449](https://github.com/Mr-Melic/stralt/pull/449), [#507](https://github.com/Mr-Melic/stralt/pull/507), [#561](https://github.com/Mr-Melic/stralt/pull/561), [#621](https://github.com/Mr-Melic/stralt/pull/621), [#660](https://github.com/Mr-Melic/stralt/pull/660), [#746](https://github.com/Mr-Melic/stralt/pull/746), [#792](https://github.com/Mr-Melic/stralt/pull/792), [#817](https://github.com/Mr-Melic/stralt/pull/817), [#876](https://github.com/Mr-Melic/stralt/pull/876), [#929](https://github.com/Mr-Melic/stralt/pull/929), [#980](https://github.com/Mr-Melic/stralt/pull/980), [#1044](https://github.com/Mr-Melic/stralt/pull/1044), [#1111](https://github.com/Mr-Melic/stralt/pull/1111), [#1163](https://github.com/Mr-Melic/stralt/pull/1163), and [#1218](https://github.com/Mr-Melic/stralt/pull/1218) already recorded zero-ID passes at the same SHA. Re-filing those IDs, or any `EBA-2026-08-31-*` / `EBA-2026-09-01-*` / `EBA-2026-09-02-*` ID, would be a duplicate. Do not invent 09-30 … 10-20 empty ledgers for the silent gap between #792 and #817.
+
+Do not implement gameplay from this file. This run ships **docs only**.
+
+Sibling IDs to consume, not duplicate: `SDA-*`, `VAL-*`, `AFDA-2026-08-31-002` / `011`, `WDEAD-*`, `AEE-*`, Enemy Elite Evolution, Enemy Formations / EBMA.
+
+Actionable work remains the OPEN IDs in:
+
+- [`ACTION_IDS_ENEMY_BOSS_ADMIN_2026-08-31.md`](./ACTION_IDS_ENEMY_BOSS_ADMIN_2026-08-31.md) (`EBA-2026-08-31-001` … `024`)
+- [`ACTION_IDS_ENEMY_BOSS_ADMIN_2026-09-01.md`](./ACTION_IDS_ENEMY_BOSS_ADMIN_2026-09-01.md) (`EBA-2026-09-01-001` … `006`; 006 copy PARTIAL)
+- [`ACTION_IDS_ENEMY_BOSS_ADMIN_2026-09-02.md`](./ACTION_IDS_ENEMY_BOSS_ADMIN_2026-09-02.md) (`EBA-2026-09-02-001` … `002`)
+- [`ACTION_IDS_ENEMY_BOSS_ADMIN_2026-09-21.md`](https://github.com/Mr-Melic/stralt/blob/cursor/enemy-boss-admin-content-27f6/docs/automation/ACTION_IDS_ENEMY_BOSS_ADMIN_2026-09-21.md) (`EBA-2026-09-21-001`, PR #360)
+
+Product rule (unchanged): Stralt has **no character level cap**. Do not treat `levelMax = 9999`, `floor(999/ts)`, `summonUnitDef.level ≤ 99`, or `DUNGEON_SPAWN_DEPTH_CAP = 5` as a career ceiling. Prefer relative offsets, probability curves, eligibility thresholds, and scalable formulas.
+
+Citation note (not an ACTION_ID): the unused “10 random spells” comment remains `WorldExploration.tsx` **11915** (same as 10-28). Line 11916 is the unused `_enemyUsableSpells` filter. The NaN `buildEnemyKit` call remains at 11920 (EBA-013). Boss Rush 100-HP placeholders independently span WX 5321–5372. Live region match independently re-read at WX **3702**.
