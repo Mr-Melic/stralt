@@ -20,6 +20,7 @@ import {
   CRUSH_MELEE_SKIPS_PLAYER_TAKES_DAMAGE,
   CRUSH_MELEE_USES_GET_STAT_MODIFIER,
   DOKA_HEAL_HP_PER_DOKA,
+  ENEMY_INTENDED_RANDOM_SPELLS_PER_ENEMY,
   ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
   ENEMY_SUMMON_CAP_SIM,
   ENEMY_USABLE_SPELL_POOL_ASSIGNED,
@@ -99,6 +100,7 @@ import {
   dokaHealCostToFillFrom,
   dungeonMaxEnemyLevel,
   effectiveSpellRange,
+  enemyUsableStarterCount,
   enemyWalkTilesInBudget,
   fallbackCrushRaw,
   fallbackCrushRawEnraged,
@@ -983,6 +985,9 @@ assert.equal(report.killCountCounterFrozen.saveKillCountCalledFromPlay, false);
 
 assert.equal(ENEMY_USABLE_SPELL_POOL_ASSIGNED, false);
 assert.equal(ENEMY_RANDOM_ADVANCED_POOL_CHANCE, 0);
+assert.equal(ENEMY_INTENDED_RANDOM_SPELLS_PER_ENEMY, 10);
+assert.ok(enemyUsableStarterCount() >= 18);
+assert.equal(report.enemyUsableSpellPoolDead.intendedRandomPerEnemy, 10);
 assert.equal(report.enemyUsableSpellPoolDead.chanceAt1, 0);
 assert.equal(report.enemyUsableSpellPoolDead.chanceAt100000, 0);
 

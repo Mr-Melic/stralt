@@ -1935,10 +1935,19 @@ export function queenKitIdsForZone(zone: unknown): string[] {
 
 /**
  * Live WX filters `usableByEnemy` into `_enemyUsableSpells` then never
- * reads it — kits alone assign spells. Random advanced-pool chance is 0.
+ * reads it — kits alone assign spells. The battle-start comment still
+ * says "Assign 10 random spells per enemy from usableByEnemy pool"
+ * (`WorldExploration.tsx` 11915–11924). Random advanced-pool chance is 0
+ * at every stress level.
  */
 export const ENEMY_USABLE_SPELL_POOL_ASSIGNED = false;
 export const ENEMY_RANDOM_ADVANCED_POOL_CHANCE = 0;
+/** Comment at WX 11915; live `assignEnemySpells` never samples this many. */
+export const ENEMY_INTENDED_RANDOM_SPELLS_PER_ENEMY = 10;
+/** `usableByEnemy !== false` (undefined counts as allowed). */
+export function enemyUsableStarterCount(): number {
+  return starterSpells.filter((s) => s.usableByEnemy !== false).length;
+}
 
 /**
  * `useSaveKillCount` is defined but never called from play UI. Canister
@@ -2408,7 +2417,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-10-28T00:20:00.000Z",
+    generatedAt: "2026-10-29T00:30:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -3545,6 +3554,8 @@ export function runLongHorizonSim() {
     enemyUsableSpellPoolDead: {
       poolAssigned: ENEMY_USABLE_SPELL_POOL_ASSIGNED,
       randomAdvancedChance: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
+      intendedRandomPerEnemy: ENEMY_INTENDED_RANDOM_SPELLS_PER_ENEMY,
+      usableStarterCount: enemyUsableStarterCount(),
       chanceAt1: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
       chanceAt100: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
       chanceAt1000: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
