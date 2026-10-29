@@ -150,6 +150,7 @@ describe("world feature catalog contract", () => {
     assert.equal(getWorldFeature("WF-HAZ-PAIR_SEAM")?.name, "Pair Seam");
     assert.equal(getWorldFeature("WF-HAZ-MATCH_SEAM")?.name, "Match Seam");
     assert.equal(getWorldFeature("WF-HAZ-POISE_SEAM")?.name, "Poise Seam");
+    assert.equal(getWorldFeature("WF-HAZ-QUOTA_SEAM")?.name, "Quota Seam");
     assert.equal(getWorldFeature("missing"), undefined);
   });
 
@@ -718,7 +719,6 @@ describe("world feature catalog contract", () => {
   });
 
   it("keeps wave 20 as an additive catalog, one feature per requested category", () => {
-    assert.equal(LATEST_CATALOG_WAVE, 20);
     const wave20 = featuresInCatalogWave(20);
     assert.equal(wave20.length, 16);
     const wave20Cats = new Set(wave20.map((f) => f.category));
@@ -758,6 +758,51 @@ describe("world feature catalog contract", () => {
     );
     for (const f of wave20) {
       assert.equal(priorIds.has(f.id), false, `wave 20 reused ${f.id}`);
+    }
+  });
+
+  it("keeps wave 21 as an additive catalog, one feature per requested category", () => {
+    assert.equal(LATEST_CATALOG_WAVE, 21);
+    const wave21 = featuresInCatalogWave(21);
+    assert.equal(wave21.length, 16);
+    const wave21Cats = new Set(wave21.map((f) => f.category));
+    for (const cat of REQUIRED_CATEGORIES) {
+      assert.equal(
+        wave21Cats.has(cat),
+        true,
+        `wave 21 missing category ${cat}`,
+      );
+    }
+    for (const f of wave21) {
+      assert.equal(featureCatalogWave(f), 21, f.id);
+      assert.equal(f.catalogWave, 21, f.id);
+    }
+    const priorIds = new Set(
+      [
+        ...featuresInCatalogWave(1),
+        ...featuresInCatalogWave(2),
+        ...featuresInCatalogWave(3),
+        ...featuresInCatalogWave(4),
+        ...featuresInCatalogWave(5),
+        ...featuresInCatalogWave(6),
+        ...featuresInCatalogWave(7),
+        ...featuresInCatalogWave(8),
+        ...featuresInCatalogWave(9),
+        ...featuresInCatalogWave(10),
+        ...featuresInCatalogWave(11),
+        ...featuresInCatalogWave(12),
+        ...featuresInCatalogWave(13),
+        ...featuresInCatalogWave(14),
+        ...featuresInCatalogWave(15),
+        ...featuresInCatalogWave(16),
+        ...featuresInCatalogWave(17),
+        ...featuresInCatalogWave(18),
+        ...featuresInCatalogWave(19),
+        ...featuresInCatalogWave(20),
+      ].map((f) => f.id),
+    );
+    for (const f of wave21) {
+      assert.equal(priorIds.has(f.id), false, `wave 21 reused ${f.id}`);
     }
   });
 });
@@ -805,7 +850,7 @@ describe("run-mode and placement guards", () => {
     );
   });
 
-  it("keeps flicker gates, gambit chests, echo gates, pilgrim banners, latch gates, wager gates, pact gates, twilight gates, ash gates, hearth gates, wane gates, clean gates, still gates, tally gates, mercy bells, mark gates, incant gates, vow gates, stride gates, near gates, ready gates, match gates, and poise gates out of runs", () => {
+  it("keeps flicker gates, gambit chests, echo gates, pilgrim banners, latch gates, wager gates, pact gates, twilight gates, ash gates, hearth gates, wane gates, clean gates, still gates, tally gates, mercy bells, mark gates, incant gates, vow gates, stride gates, near gates, ready gates, match gates, poise gates, and quota gates out of runs", () => {
     const flicker = getWorldFeature("WF-PRT-FLICKER_GATE");
     const gambit = getWorldFeature("WF-RSK-GAMBIT_CHEST");
     const echo = getWorldFeature("WF-PRT-ECHO_GATE");
@@ -829,6 +874,7 @@ describe("run-mode and placement guards", () => {
     const ready = getWorldFeature("WF-PRT-READY_GATE");
     const match = getWorldFeature("WF-PRT-MATCH_GATE");
     const poise = getWorldFeature("WF-PRT-POISE_GATE");
+    const quota = getWorldFeature("WF-PRT-QUOTA_GATE");
     assert.ok(
       flicker &&
         gambit &&
@@ -852,7 +898,8 @@ describe("run-mode and placement guards", () => {
         near &&
         ready &&
         match &&
-        poise,
+        poise &&
+        quota,
     );
     for (const f of [
       flicker,
@@ -878,6 +925,7 @@ describe("run-mode and placement guards", () => {
       ready,
       match,
       poise,
+      quota,
     ]) {
       assert.equal(
         isFeatureAllowedInContext(f, { runMode: "dungeon" }),
@@ -1126,6 +1174,16 @@ describe("run-mode and placement guards", () => {
     assert.ok(poiseSeam);
     const poiseHaz = extraHazardRoll(poiseSeam, () => 0.99);
     assert.ok(poiseHaz >= 4 && poiseHaz <= 8);
+    const quotaFile = getWorldFeature("WF-INV-QUOTA_FILE");
+    assert.ok(quotaFile);
+    assert.equal(
+      extraEnemyRoll(quotaFile, () => 0.5),
+      2,
+    );
+    const quotaSeam = getWorldFeature("WF-HAZ-QUOTA_SEAM");
+    assert.ok(quotaSeam);
+    const quotaHaz = extraHazardRoll(quotaSeam, () => 0.99);
+    assert.ok(quotaHaz >= 4 && quotaHaz <= 8);
   });
 });
 
@@ -1142,7 +1200,7 @@ describe("pickWeightedFeatures", () => {
 
   it("can still surface rare ids across many rarity-weighted rolls", () => {
     const seen = new Set<string>();
-    for (let seed = 1; seed <= 2800; seed++) {
+    for (let seed = 1; seed <= 3000; seed++) {
       for (const f of pickWeightedFeatures(mulberry32(seed), {
         runMode: "none",
       })) {
@@ -1232,6 +1290,10 @@ describe("pickWeightedFeatures", () => {
     assert.ok(
       [...seen].some((id) => featureCatalogWave(getWorldFeature(id)!) === 20),
       "rarity weights never produced a wave-20 feature",
+    );
+    assert.ok(
+      [...seen].some((id) => featureCatalogWave(getWorldFeature(id)!) === 21),
+      "rarity weights never produced a wave-21 feature",
     );
   });
 

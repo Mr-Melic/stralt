@@ -1,10 +1,10 @@
 # World Dynamics Catalog
 
 **Role:** World Dynamics Designer  
-**Date:** 2026-10-28 (wave 20)  
+**Date:** 2026-10-29 (wave 21)  
 **Canonical IDs:** `src/frontend/src/engine/worldFeatures.ts`  
 **Status:** Designed. Not wired into map generation, the RAF loop, turn advance, or combat damage formulas.  
-**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5) · `WDD-2026-09-23-001` (wave 6) · `WDD-2026-09-24-001` (wave 7) · `WDD-2026-09-25-001` (wave 8) · `WDD-2026-09-26-001` (wave 9) · `WDD-2026-09-27-001` (wave 10) · `WDD-2026-09-28-001` (wave 11) · `WDD-2026-09-29-001` (wave 12) · `WDD-2026-10-21-001` (wave 13) · `WDD-2026-10-22-001` (wave 14) · `WDD-2026-10-23-001` (wave 15) · `WDD-2026-10-24-001` (wave 16) · `WDD-2026-10-25-001` (wave 17) · `WDD-2026-10-26-001` (wave 18) · `WDD-2026-10-27-001` (wave 19) · `WDD-2026-10-28-001` (wave 20)
+**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5) · `WDD-2026-09-23-001` (wave 6) · `WDD-2026-09-24-001` (wave 7) · `WDD-2026-09-25-001` (wave 8) · `WDD-2026-09-26-001` (wave 9) · `WDD-2026-09-27-001` (wave 10) · `WDD-2026-09-28-001` (wave 11) · `WDD-2026-09-29-001` (wave 12) · `WDD-2026-10-21-001` (wave 13) · `WDD-2026-10-22-001` (wave 14) · `WDD-2026-10-23-001` (wave 15) · `WDD-2026-10-24-001` (wave 16) · `WDD-2026-10-25-001` (wave 17) · `WDD-2026-10-26-001` (wave 18) · `WDD-2026-10-27-001` (wave 19) · `WDD-2026-10-28-001` (wave 20) · `WDD-2026-10-29-001` (wave 21)
 
 These features exist so a long-lived character still meets new spatial and risk decisions after the 22 live map modifiers and lava / ice / spikes have been seen many times. Variation comes from **rarity weights** and **relative difficulty versus same-tier content**, not from “unlocks at level N”.
 
@@ -40,7 +40,7 @@ Hard product rules this catalog must not break:
 | HP taxes | fraction of **current max HP** so a seam still matters at 1000 HP |
 | Slots per map | tile 55% · encounter 25% · event 15% · max 3 features |
 | Death Realm | no features |
-| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate, no Twilight Gate, no Ash Gate, no Hearth Gate, no Wane Gate, no Clean Gate, no Still Gate, no Tally Gate, no Mercy Bell, no Mark Gate, no Incant Gate, no Vow Gate, no Stride Gate, no Near Gate, no Ready Gate, no Match Gate, no Poise Gate (portal-filter + run integrity) |
+| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate, no Twilight Gate, no Ash Gate, no Hearth Gate, no Wane Gate, no Clean Gate, no Still Gate, no Tally Gate, no Mercy Bell, no Mark Gate, no Incant Gate, no Vow Gate, no Stride Gate, no Near Gate, no Ready Gate, no Match Gate, no Poise Gate, no Quota Gate (portal-filter + run integrity) |
 | Live modifiers | the existing 22 still roll on their own two-roll; this catalog does not replace them |
 
 `pickWeightedFeatures` never receives player level.
@@ -4411,6 +4411,220 @@ COUNTERPLAY: Spend any MP then end; accept the tax to hold an unwalked kit; shov
 
 ---
 
+## Wave 21 (2026-10-29)
+
+Twenty-first-wave seams so a long-lived character still meets new decisions after waves 1–20 have been seen many times. Same rarity weights and relative difficulty. Same overlay contract. Do not clone lava / ice / spikes, the live 22 modifiers, or wave-1 through wave-20 ids. Axis: remaining AP equals max MP — not remaining AP equals max AP (Ready), remaining AP 0 (Spent / Empty), remaining MP 0 (Plant), remaining AP equals remaining MP (Match), or remaining MP equals max MP (Poise).
+
+### WF-HAZ-QUOTA_SEAM
+
+WORLD_FEATURE_ID: WF-HAZ-QUOTA_SEAM  
+NAME: Quota Seam  
+MECHANIC: Quota-slate seams. Stepping on them costs 4% of the unit’s current max HP only while remaining AP equals max MP. Any other leftover-AP count makes the seam free floor. Walkable. Distinct from Ready Sill / Ready Hour (remaining AP equals max AP), Spent Seam (dump-last-AP tax), Plant Font (heal at remaining MP 0), Match Seam (remaining AP equals remaining MP), Poise Seam (remaining MP equals max MP), and Last Seam (dump-last-MP tax).  
+PLAYER_DECISION: Cut through after spending AP off quota, stay at leftover AP equal to max MP and pay, or spend MP to path around.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: common (weight 40)  
+VISUAL: Quota seam, `#302418` wash, quota glyph.  
+SOLVABILITY: Floor only. Never on spawn±3 or portals. Never the only cell in a corridor (does not block).  
+COMBAT_RULES: Challenge HP recorders. Quota check is remaining AP equals max MP. A kit whose max AP equals max MP is at quota at turn start. Wounded AI treats a quota seam step like lava. Counts toward `MAX_HAZARD_TILES` (4–8 tiles).  
+COUNTERPLAY: Spend AP off quota then cross, walk around, teleport (ground/self metadata), or send a summon that is not at quota.
+
+### WF-HAZ-QUOTA_CINDER
+
+WORLD_FEATURE_ID: WF-HAZ-QUOTA_CINDER  
+NAME: Quota Cinder  
+MECHANIC: A single cinder orb. At round start it steps one tile toward the living unit whose remaining AP currently equals max MP (painted quota chevron). Ties prefer the lowest combatant id. If nobody is at quota, it sits still. Landing on a unit costs 5% max HP. Distinct from Busy Cinder (most AP spent last round), Lean Cinder (fewest remaining AP), Cast Cinder (last SpellConfig spender), Hunting Lantern (last MP spender), Hurt Cinder (lowest HP%), Match Cinder (remaining AP equals remaining MP), and Poise Cinder (remaining MP equals max MP).  
+PLAYER_DECISION: Spend AP off quota so it sits or hunts a quota foe, hold leftover AP equal to max MP to bait it, or step off its quota chevron.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare (weight 8)  
+VISUAL: Quota cinder, `#302010` wash, quota chevron.  
+SOLVABILITY: Never starts on spawn/portal. A floor path around the orb remains. Not a wall.  
+COMBAT_RULES: Round-start 1-tile step. Challenge HP. No AP/MP spend, no skipped turns. 1 hazard budget. Reads remaining AP and max MP, never a spell name.  
+COUNTERPLAY: Spend AP off quota so it sits; leave a foe at quota and end off its quota chevron; push/attract a quota foe onto that cell.
+
+### WF-TRP-QUOTA_PLATE
+
+WORLD_FEATURE_ID: WF-TRP-QUOTA_PLATE  
+NAME: Quota Plate  
+MECHANIC: A visible rune plate. Stepping onto it while remaining AP does not equal max MP is free and leaves the plate armed. The first step onto it this map while remaining AP equals max MP costs 8% max HP once; then the plate becomes floor. Distinct from Glyph Plate (any enter), Chevron Plate (one painted facing), Skew Plate (diagonal enter), Spent Plate (remaining AP 0), Dash Plate (after an MP spend), Camp Plate (end-turn), Match Plate (remaining AP equals remaining MP), and Poise Plate (remaining MP equals max MP).  
+PLAYER_DECISION: Step on off quota, hold leftover AP equal to max MP and spend the trap, or bait an enemy in while they are at quota.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon (weight 20)  
+VISUAL: Quota plate, `#2c2010` wash, always-visible quota rune.  
+SOLVABILITY: Walkable before and after. Never hidden. Never on spawn/portals.  
+COMBAT_RULES: One-shot step trigger while remaining AP equals max MP. Challenge HP. No name-based trap lookup.  
+COUNTERPLAY: Enter off quota; send a quota summon; shove a quota foe on; ignore it.
+
+### WF-TER-QUOTA_PANE
+
+WORLD_FEATURE_ID: WF-TER-QUOTA_PANE  
+NAME: Quota Pane  
+MECHANIC: A quota ice sheet occupies a cell: units may walk through it, but it blocks LoS. Adjacent 1 AP (no spell) smashes it to clear floor only while remaining AP equals max MP before the spend. An off-quota smash is illegal and spends nothing. Distinct from Frost Pane (1 AP smash always), Match Pane (smash while remaining AP equals remaining MP), Poise Pane (smash while remaining MP equals max MP), Brace Column (walk+LoS brace/smash), Reed Screen (open LoS), Slit Wall (rotate a facing), and Hush Curtain (blocks spells).  
+PLAYER_DECISION: Spend AP down to leftover AP equal to max MP then smash for LoS, hide behind the pane, or walk through and accept the blind.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Quota pane, `#382818` wash, crack chips on smash.  
+SOLVABILITY: Does not block walk. Smash is optional. Never on spawn/portals.  
+COMBAT_RULES: 1 AP occupancy action, legal only while remaining AP equals max MP before the spend. No damage. Wall for LoS until smashed. Walk occupancy is floor.  
+COUNTERPLAY: Walk through; smash at quota when a linear shot is worth 1 AP; stand behind it against linear spells.
+
+### WF-OBS-QUOTA_SILL
+
+WORLD_FEATURE_ID: WF-OBS-QUOTA_SILL  
+NAME: Quota Sill  
+MECHANIC: A short-path corridor cell starts as a wall. It becomes floor for the rest of the map after the player ends a turn with remaining AP equal to max MP. Distinct from Ready Sill (remaining AP equals max AP), Spent Sill (remaining AP 0), Plant Font (heal at remaining MP 0), Match Sill (remaining AP equals remaining MP), Poise Sill (remaining MP equals max MP), Hale Sill (≥80% HP), and Gale Bite (plant or pay to move).  
+PLAYER_DECISION: End a turn with leftover AP equal to max MP to open the short path, take the long way, or wait until a round you already planned to stop at quota.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Quota sill, `#2a2418` wash, quota pip that flips open.  
+SOLVABILITY: Place only when a second spawn→portal route already exists. Evaluate solvability as if the sill were already a wall. Never the only exit.  
+COMBAT_RULES: Wall occupancy until a player end-of-turn with remaining AP equal to max MP. No damage.  
+COUNTERPLAY: Take the long path; open it on a turn you already expected to stop at leftover AP equal to max MP; teleport past if metadata allows.
+
+### WF-ZON-QUOTA_FONT
+
+WORLD_FEATURE_ID: WF-ZON-QUOTA_FONT  
+NAME: Quota Font  
+MECHANIC: A quota basin. The first unit to end a turn here this map heals 8% max HP only if remaining AP equals max MP; then the tile dries. Ending here off quota does nothing and does not dry it. Enemies can drink it. Distinct from Ready Hour (remaining AP equals max AP), Empty Font (remaining AP 0), Plant Font (remaining MP 0), Match Font (remaining AP equals remaining MP), Poise Font (remaining MP equals max MP), Pair Font (Chebyshev ≤ 1), Alone Font (no neighbor), and Shrine Pool (unconditional first drink).  
+PLAYER_DECISION: End at leftover AP equal to max MP on the basin for the heal, deny the enemy the basin, or ignore it.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Quota font, `#301c10` wash, rising copper motes.  
+SOLVABILITY: Walkable. Optional. Never on spawn/portals.  
+COMBAT_RULES: Zone tick, not a spell. Quota check is remaining AP equals max MP at end of turn. Player HP persist via `saveBattleStats` on the progress lock.  
+COUNTERPLAY: Step on it at leftover AP equal to max MP; shove a drinker off; ignore when off quota.
+
+### WF-TEL-QUOTA_STEP
+
+WORLD_FEATURE_ID: WF-TEL-QUOTA_STEP  
+NAME: Quota Step  
+MECHANIC: Two linked quota cyan pads. Entering one for 1 MP exits the other only while remaining AP equals max MP before the spend. Otherwise the MP is not spent and you stay. If the exit is occupied, the travelers swap. Distinct from Empty Step (remaining AP 0), Spare Step (leftover AP), File Step (on-axis vs a hostile), Skew Step (off-axis), Match Step (remaining AP equals remaining MP), Poise Step (remaining MP equals max MP before the 1 MP), Plant Font (heal at remaining MP 0), and Ready Sill (remaining AP equals max AP).  
+PLAYER_DECISION: Spend AP down to leftover AP equal to max MP then pay 1 MP to skip, stay off quota and walk, or leave a pad as an enemy escape.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Quota pads, `#382818` wash, copper pulse.  
+SOLVABILITY: Both on floor, not on spawn/portals. The map is solvable without using them.  
+COMBAT_RULES: 1 MP from the unit’s current MP, only while remaining AP equals max MP before that spend. Not a teleport spell — do not key off `effectCategory`.  
+COUNTERPLAY: Stand on the exit to force a swap; ignore the pair; stay off quota so you cannot use it.
+
+### WF-PRT-QUOTA_GATE
+
+WORLD_FEATURE_ID: WF-PRT-QUOTA_GATE  
+NAME: Quota Gate  
+MECHANIC: An extra sealed portal with a quota pip. It is not an exit until the player has ended a turn with remaining AP equal to max MP this map. Then entering rolls a random eligible overworld map and pays a hard `applyRewards` grant. It is never the only portal. Distinct from Ready Gate (remaining AP equals max AP), Match Gate (remaining AP equals remaining MP), Poise Gate (remaining MP equals max MP), Spent Sill (0 AP opens a wall), Still Gate (no-fight), Hearth Gate (full HP), Empty Step (0 AP pads), Near Gate (end adjacent to a hostile), and Plant Font (heal at remaining MP 0).  
+PLAYER_DECISION: End a turn with leftover AP equal to max MP to arm a bonus gamble exit, or take the stable portal you can already see.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic (weight 3)  
+VISUAL: Quota portal, `#2c2410` wash, pip flips when armed.  
+SOLVABILITY: Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm. Unarmed it does not count as an exit.  
+COMBAT_RULES: Arm keys off a player end-of-turn with remaining AP equal to max MP. Entry is a portal transition. Bonus via `applyRewards` on the persist lock. Death-realm guards still block entry.  
+COUNTERPLAY: Ignore it. The stable exit always works.
+
+### WF-INV-QUOTA_FILE
+
+WORLD_FEATURE_ID: WF-INV-QUOTA_FILE  
+NAME: Quota File  
+MECHANIC: Two extra same-tier elites (hard threat) share a painted file. The first (painted quota pennant) cannot spend AP until the second is dead OR the player ends a turn with remaining AP equal to max MP. Occupancy-walks (MP) stay legal. Victory pays hard reward multiplier. Distinct from Ready File (unlock at remaining AP equals max AP), Match File (unlock at remaining AP equals remaining MP), Poise File (unlock at remaining MP equals max MP), Sheath File (second AP-locked until the first dies or you end adjacent), Mute File (first SpellConfig-locked), Guard File (first walk-locked), and Sleeping Vanguard (both world-asleep until touch).  
+PLAYER_DECISION: End a turn at leftover AP equal to max MP so the quota elite can act, burst the free spender first, or walk to a portal and leave.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Two pennants, quota mark on the first, `#302818` wash.  
+SOLVABILITY: Adds enemies only up to `MAX_ENEMIES`. Skip if the roster cannot fit 2. In dungeon / boss rush they count as hostiles for map-clear.  
+COMBAT_RULES: Quota lock is occupancy/turn state, not a buff spell. Blocks AP spends only. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: Leave without engaging (exploration); kill the free spender first; stop at leftover AP equal to max MP when you want both acting.
+
+### WF-ELT-QUOTA_PICKET
+
+WORLD_FEATURE_ID: WF-ELT-QUOTA_PICKET  
+NAME: Quota Picket  
+MECHANIC: One elite (same-tier × hard) occupies a painted post only while the player’s remaining AP equals max MP. Spend AP off quota and the post is empty floor (exploration: they leave, no purse). Touch to fight (hard purse). Dungeon / boss rush: they stand from map start — required for map-clear. Distinct from Ready Picket (remaining AP equals max AP), Match Picket (remaining AP equals remaining MP), Poise Picket (remaining MP equals max MP), Plant Picket (remaining MP 0), High Picket (≥80% HP), Spell Picket (after a cast), Spent Sill (0 AP wall), and Drift Sentinel (odd-round).  
+PLAYER_DECISION: Spend AP off quota and walk past (exploration), hold leftover AP equal to max MP and fight for the hard purse, or (in a run) fight them because they already stand.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare  
+VISUAL: Quota post, `#281c10` wash, copper pennant.  
+SOLVABILITY: Post is floor. Exit reachable without touching. Counts as 1 enemy. In a run they are present from the start.  
+COMBAT_RULES: Appearance keys off the player’s remaining AP equaling max MP. World contact starts a normal battle. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: In exploration, spend AP off quota and pass; hold leftover AP equal to max MP when you want the purse; in a run, fight them.
+
+### WF-TRS-QUOTA_CACHE
+
+WORLD_FEATURE_ID: WF-TRS-QUOTA_CACHE  
+NAME: Quota Cache  
+MECHANIC: A quota chest. Spending 1 AP adjacent opens it only while remaining AP equals max MP before that spend: medium `applyRewards` grant and no guardian. An off-quota open is illegal and spends nothing. Distinct from Round Cache (opens rounds 1–2), Late Cache (opens from round 3), Plant Cache (remaining MP 0), Match Cache (remaining AP equals remaining MP), Poise Cache (remaining MP equals max MP), Trip Cache (open before any MP this map), Empty Font (heal at remaining AP 0), and Patience Cache (wait-or-open).  
+PLAYER_DECISION: Spend AP down to leftover AP equal to max MP then spend 1 AP to open, stay off quota and lose the chest this turn, or walk past.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Quota chest, `#302410` wash, copper trim.  
+SOLVABILITY: Adjacent-open, not a wall. Optional. Never on spawn/portals.  
+COMBAT_RULES: AP cost, not a spell. Legal only while remaining AP equals max MP before that 1 AP. Credits via persist-lock `applyRewards`.  
+COUNTERPLAY: Skip the chest; open at leftover AP equal to max MP when you can spare 1 AP; ignore it while off quota.
+
+### WF-SPL-QUOTA_TUTOR
+
+WORLD_FEATURE_ID: WF-SPL-QUOTA_TUTOR  
+NAME: Quota Tutor  
+MECHANIC: One same-tier enemy (medium threat) carries 1 extra `usableByEnemy` spell. If the player ends a turn with remaining AP equal to max MP while they still live (any distance), the player gains that spell id as a **single remaining cast** this map. Killing them before that quota teach grants the purse but not the one-cast. They stay hostile after the teach. Distinct from Ready Tutor (remaining AP equals max AP), Match Tutor (remaining AP equals remaining MP), Poise Tutor (remaining MP equals max MP), Plant Tutor (remaining MP 0), Close Tutor (end turn adjacent), Live Tutor (repeating loan while they live), Empty Font (heal at remaining AP 0), and Steel Hour (skip paid-AP spells for a purse).  
+PLAYER_DECISION: End a turn with leftover AP equal to max MP while they live for a one-shot, burst-kill for the purse, or ignore them.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Enemy with a hovering quota orb, `#241808` wash.  
+SOLVABILITY: Prefer replacing one existing spawn; else +1 if under the enemy cap. Must stay reachable. In dungeon / boss rush they count as hostiles for map-clear.  
+COMBAT_RULES: Metadata only (`usableByEnemy`, `targetType`, costs). One-cast does not call `upgradeSpell` and does not persist `spellLevel*` arrays.  
+COUNTERPLAY: Kite and ignore; stop at leftover AP equal to max MP for the teach then leave; burst-kill if you want the purse more than the cast.
+
+### WF-RSK-QUOTA_OATH
+
+WORLD_FEATURE_ID: WF-RSK-QUOTA_OATH  
+NAME: Quota Oath  
+MECHANIC: A quota inlay. Voluntarily ending a turn on it flags this map. If the next `applyRewards` happens while the player’s remaining AP equals max MP, that credit uses the hard multiplier. If leftover AP is already off quota at credit, the flag pays nothing extra. Distinct from Ready Hour (ended remaining AP equals max AP at least once), Match Oath (remaining AP equals remaining MP at credit), Poise Oath (remaining MP equals max MP at credit), Spent Oath (cash out at remaining AP 0), Plant Oath (cash out at remaining MP 0), Spare Oath (leftover AP), and Pair Oath (Chebyshev ≤ 1 at credit).  
+PLAYER_DECISION: Flag a fight you will cash out at leftover AP equal to max MP, or stay unflagged and spend AP freely.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Quota inlay, `#281808` wash, copper tick.  
+SOLVABILITY: Optional floor tile. Map is solvable if never used.  
+COMBAT_RULES: Quota check is remaining AP equals max MP at the `applyRewards` enqueue. Multiplier on the next `applyRewards` enqueue only. Death still uses `saveBattleStats`.  
+COUNTERPLAY: Skip it. Use it only when you expect to stop at leftover AP equal to max MP at credit, or spend AP off quota if you need to void the flag.
+
+### WF-MOD-QUOTA_CAST
+
+WORLD_FEATURE_ID: WF-MOD-QUOTA_CAST  
+NAME: Quota Cast  
+MECHANIC: This map only: a combatant may spend a `SpellConfig` only while remaining AP equals max MP before that spend. Off quota a `SpellConfig` spend is illegal this turn. Attack Nearest, summons, occupancy-walks, and 0-spell turns are unchanged. Distinct from Walk Lock (after an occupancy-walk, no casts), Once Cast (at most one SpellConfig per turn), Cast Lock (after a spell, no walks), Match Cast (remaining AP equals remaining MP), Poise Cast (remaining MP equals max MP), Short Fuse (cooldown spells locked round 1), Tight Grip (0-MP spells cost 1), and Heavy Incant (high-AP spells cost MP).  
+PLAYER_DECISION: Spend AP down to leftover AP equal to max MP then cast, Attack Nearest off quota, summon a second caster, or skip the fight.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Quota-cast overlay, `#2a2010` wash, copper wick on off-quota spells.  
+SOLVABILITY: No tile change. Attack Nearest, summons, occupancy-walks, and off-quota no-spell turns remain usable.  
+COMBAT_RULES: Reads remaining AP equals max MP before each `SpellConfig` spend. Attack Nearest is not a spell. No damage rewrite. A kit whose max AP equals max MP may open with a spell.  
+COUNTERPLAY: Spend AP to quota then cast; Attack Nearest off quota; summon a caster; refuse the fight.
+
+### WF-EVT-QUOTA_HOUR
+
+WORLD_FEATURE_ID: WF-EVT-QUOTA_HOUR  
+NAME: Quota Hour  
+MECHANIC: This map only: if the player ended at least one turn with remaining AP equal to max MP, the next `applyRewards` uses the hard multiplier. Always ending off quota leaves rewards unchanged. Distinct from Ready Hour (remaining AP equals max AP), Match Hour (remaining AP equals remaining MP), Poise Hour (remaining MP equals max MP), Spent Oath (remaining AP 0), Plant Oath (remaining MP 0), Vacant Hour (skip summons), and Quota Gate (arm an extra portal).  
+PLAYER_DECISION: End at least one turn with leftover AP equal to max MP for a hard purse, or always end off quota and accept normal rewards.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Copper corona, `#241810` wash, quota disc at the horizon.  
+SOLVABILITY: No blocks. Leaving is always legal.  
+COMBAT_RULES: Quota means remaining AP equals max MP at player end-of-turn. Multipliers on persist-lock `applyRewards` only. Does not rewrite `combatMath`.  
+COUNTERPLAY: Stop at leftover AP equal to max MP once then spend freely; ignore the overlay and always end off quota; leave without fighting.
+
+### WF-ENV-QUOTA_DRAFT
+
+WORLD_FEATURE_ID: WF-ENV-QUOTA_DRAFT  
+NAME: Quota Draft  
+MECHANIC: At the end of each combatant turn, if remaining AP equals max MP they pay 3% max HP. Ending the turn off quota is shelter. Painted quota rings sit around bodies that currently hold leftover AP equal to max MP. Distinct from Spare Draft (dump leftover AP), Stride Draft (dump leftover MP), Match Draft (remaining AP equals remaining MP), Poise Draft (remaining MP equals max MP), Isolation Chill (nobody within 3), Pair Draft (Chebyshev ≤ 1), Ready Hour (remaining AP equals max AP), Gale Bite (plant or pay to move), and Empty Font (heal at remaining AP 0).  
+PLAYER_DECISION: Spend AP off quota before ending the turn, hold leftover AP equal to max MP and pay, or shove a foe so they end at quota.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: uncommon  
+VISUAL: Quota-draft wash `#282010`, quota rings.  
+SOLVABILITY: Does not add walls. Tax is not a wall.  
+COMBAT_RULES: End-of-turn challenge HP. Quota check is remaining AP equals max MP. Summons pay it. No skipped turns.  
+COUNTERPLAY: Spend AP off quota then end; accept the tax to hold a quota kit; shove a foe after they have already acted.
+
+---
+
 ## Composition examples (same level, different maps)
 
 1. Ember Vein + Banner Patrol + Crosswind — path taxes, a moving elite, slides that can dump you onto the seam.  
@@ -4512,10 +4726,15 @@ COUNTERPLAY: Spend any MP then end; accept the tax to hold an unwalked kit; shov
 97. Poise Cinder + Poise Font + Poise Draft — bait a still-stocked hunter, drink unwalked, spend any MP or pay.  
 98. Poise Sill + Poise Step — stand still to open the short path vs 1 MP first-step skip.  
 99. Poise File + Poise Oath — stand still so the poised elite can act, then cash out unwalked.  
-100. Poise Cache + Poise Hour — open before walking, then end unwalked once for a hard purse.
+100. Poise Cache + Poise Hour — open before walking, then end unwalked once for a hard purse.  
+101. Quota Seam + Quota Picket + Quota Cast — leftover-AP-equals-max-MP step tax, spend AP off quota to skip an elite, cast only at quota.  
+102. Quota Cinder + Quota Font + Quota Draft — bait a leftover-AP hunter, drink at quota, end off quota or pay.  
+103. Quota Sill + Quota Step — stop at leftover AP equal to max MP to open the short path vs 1 MP quota skip.  
+104. Quota File + Quota Oath — stop at leftover AP equal to max MP so the quota elite can act, then cash out at quota.  
+105. Quota Cache + Quota Hour — open at leftover AP equal to max MP, then end at quota once for a hard purse.
 
 None of these require a higher character level. The warband is scarier because it is a larger same-tier pack, not because it is “level 40 content”.
 
 ## Implementation gate
 
-Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, **WDD-2026-09-22-001**, **WDD-2026-09-23-001**, **WDD-2026-09-24-001**, **WDD-2026-09-25-001**, **WDD-2026-09-26-001**, **WDD-2026-09-27-001**, **WDD-2026-09-28-001**, **WDD-2026-09-29-001**, **WDD-2026-10-21-001**, **WDD-2026-10-22-001**, **WDD-2026-10-23-001**, **WDD-2026-10-24-001**, **WDD-2026-10-25-001**, **WDD-2026-10-26-001**, **WDD-2026-10-27-001**, or **WDD-2026-10-28-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
+Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, **WDD-2026-09-22-001**, **WDD-2026-09-23-001**, **WDD-2026-09-24-001**, **WDD-2026-09-25-001**, **WDD-2026-09-26-001**, **WDD-2026-09-27-001**, **WDD-2026-09-28-001**, **WDD-2026-09-29-001**, **WDD-2026-10-21-001**, **WDD-2026-10-22-001**, **WDD-2026-10-23-001**, **WDD-2026-10-24-001**, **WDD-2026-10-25-001**, **WDD-2026-10-26-001**, **WDD-2026-10-27-001**, **WDD-2026-10-28-001**, or **WDD-2026-10-29-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
