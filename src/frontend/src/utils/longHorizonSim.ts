@@ -75,9 +75,14 @@ import {
 import {
   APPLY_REWARDS_MAX_DOKA_DELTA,
   APPLY_REWARDS_MAX_XP_DELTA,
+  PORTAL_TRANSITION_XP,
   clampApplyRewardsDeltas,
 } from "./applyRewardsResult.ts";
-import { DEATH_DOKA_PENALTY_RATE } from "./deathPenalty.ts";
+import {
+  DEATH_DOKA_PENALTY_RATE,
+  DEATH_XP_PENALTY_RATE,
+  victoryResourceFloor,
+} from "./deathPenalty.ts";
 import { startingChampionStats } from "./startingChampionStats.ts";
 import { applyXpDelta, xpForNextLevel, xpThresholdBigInt } from "./xpCurve.ts";
 
@@ -1838,6 +1843,191 @@ export function stringIdentityFamilyChance(): number {
   );
 }
 
+/** Live portal step XP (`applyRewardsResult.PORTAL_TRANSITION_XP`). */
+export const PORTAL_TRANSITION_XP_SIM = PORTAL_TRANSITION_XP;
+
+/**
+ * Portal +10 as a fraction of the exact N→N+1 threshold. Returns 0 when the
+ * bigint threshold no longer fits in IEEE Number (L53+).
+ */
+export function portalXpFractionOfThreshold(level: number): number {
+  const need = xpNeedExactAsNumber(level);
+  if (!Number.isFinite(need) || need <= 0) return 0;
+  return PORTAL_TRANSITION_XP_SIM / need;
+}
+
+/**
+ * Portals needed to replace a death cut of `leftoverXp` (20% floored).
+ * Uses bigint so L100 leftover near a full bar stays exact.
+ */
+export const DEATH_XP_PENALTY_RATE_SIM = DEATH_XP_PENALTY_RATE;
+
+export function portalsToRecoverDeathXp(leftoverXp: number | bigint): number {
+  const left =
+    typeof leftoverXp === "bigint"
+      ? leftoverXp < 0n
+        ? 0n
+        : leftoverXp
+      : BigInt(Math.max(0, Math.floor(Number(leftoverXp) || 0)));
+  // floor(leftover * 0.2) for the live 20% cut — Nat-safe via integer /5.
+  const lost =
+    DEATH_XP_PENALTY_RATE_SIM === 0.2
+      ? left / 5n
+      : BigInt(Math.floor(Number(left) * DEATH_XP_PENALTY_RATE_SIM));
+  if (lost <= 0n) return 0;
+  const per = BigInt(PORTAL_TRANSITION_XP_SIM);
+  return Number((lost + per - 1n) / per);
+}
+
+/**
+ * Map-generation zone label (`WorldExploration.tsx` 4679–4687):
+ * `playerTier = floor((L-1)/tierSize)`, `currentZoneTier = playerTier + 1`,
+ * `minLevel/maxLevel = playerTier band` — **not** clamped by the 999 pick.
+ */
+export function mapZoneLabel(
+  playerLevel: number,
+  tierSize = 10,
+): {
+  zoneTier: number;
+  minLevel: number;
+  maxLevel: number;
+} {
+  const ts = Math.max(1, Math.floor(Number(tierSize) || 10));
+  const playerTier = Math.floor(
+    (Math.max(1, Math.floor(Number(playerLevel) || 1)) - 1) / ts,
+  );
+  return {
+    zoneTier: playerTier + 1,
+    minLevel: playerTier * ts + 1,
+    maxLevel: (playerTier + 1) * ts,
+  };
+}
+
+/** Last overworld tier index `pickEnemyLevelFromTiers` will keep (`floor(999/ts)`). */
+export function overworldMaxTier(tierSize = 10): number {
+  const ts = Math.max(1, Math.floor(Number(tierSize) || 10));
+  return Math.floor(999 / ts);
+}
+
+/**
+ * Intended kit zone if callers passed `currentZoneTier` (playerTier+1)
+ * instead of the LevelZone object. Queen/king inferno unlocks at z≥2.
+ */
+export function intendedKitZone(playerLevel: number, tierSize = 10): number {
+  return mapZoneLabel(playerLevel, tierSize).zoneTier;
+}
+
+/** First player level whose intended kit zone is ≥ 2 (inferno band). */
+export function firstPlayerLevelIntendedKitZoneAtLeast(
+  zone: number,
+  tierSize = 10,
+): number {
+  const need = Math.max(0, Math.floor(Number(zone) || 0));
+  for (let level = 1; level <= 200; level++) {
+    if (intendedKitZone(level, tierSize) >= need) return level;
+  }
+  return 1;
+}
+
+export function queenKitIdsForZone(zone: unknown): string[] {
+  return buildEnemyKit("queen", zone as number);
+}
+
+/**
+ * Live WX filters `usableByEnemy` into `_enemyUsableSpells` then never
+ * reads it — kits alone assign spells. Random advanced-pool chance is 0.
+ */
+export const ENEMY_USABLE_SPELL_POOL_ASSIGNED = false;
+export const ENEMY_RANDOM_ADVANCED_POOL_CHANCE = 0;
+
+/**
+ * `useSaveKillCount` is defined but never called from play UI. Canister
+ * `saveKillCount` rejects `kills > 64`, but official clients never hit it.
+ */
+export const SAVE_KILL_COUNT_CALLED_FROM_PLAY = false;
+export const SAVE_KILL_COUNT_SINGLE_BATTLE_BOUND = 64;
+export const LEADERBOARD_KILL_COUNT_STAYS_AT_CREATE = true;
+
+/**
+ * Blood Mend advertises "+15% CHC for 2 turns" (`spellData.ts` 87–98) but
+ * `resolvePlayerCast` heal branch returns after `ctx.heal` and never calls
+ * `applyEffect` (`spellEngine.ts` 655–672). `buffModifier: 0.15` would also
+ * multiply CHC by 0.15 (−85%) if the shield-style path ever saw it.
+ */
+export const BLOOD_MEND_CHC_BUFF_APPLIED = false;
+export const BLOOD_MEND_BUFF_MODIFIER = 0.15;
+export const BLOOD_MEND_ADVERTISED_CHC_DELTA = 0.15;
+export function bloodMendBuffModifierAsPercentDelta(
+  modifier = BLOOD_MEND_BUFF_MODIFIER,
+): number {
+  return Math.round((Number(modifier) - 1) * 100) / 100;
+}
+
+/**
+ * Iron Curse announce is "+30% RES, healing halved." Registry
+ * `onEffectApplication` for heal only logs and returns true
+ * (`mapModifiers.ts` 389–395); WX heal uses `ctx.heal` and never checks
+ * `iron_curse` or applies 0.5. RES×1.3 still runs on combatantsRef (10-25-003).
+ */
+export const IRON_CURSE_HEAL_HALVED = false;
+export const IRON_CURSE_ANNOUNCE_CLAIMS_HEAL_HALVED = true;
+
+/**
+ * Victory AP/MP floors (`deathPenalty.ts` victoryResourceFloor) use /20 and
+ * /10 while formula AP/MP use /25. mergeVictory raises ap/mp only — not
+ * maxAp/maxMp — so current can exceed create/persist caps on the HUD.
+ */
+export function victoryApFloor(level: number): number {
+  return victoryResourceFloor(level).ap;
+}
+export function victoryMpFloor(level: number): number {
+  return victoryResourceFloor(level).mp;
+}
+export function victoryApExceedsFormula(level: number): boolean {
+  return victoryApFloor(level) > formulaAp(level);
+}
+export function victoryMpExceedsFormula(level: number): boolean {
+  return victoryMpFloor(level) > formulaMp(level);
+}
+export function firstLevelVictoryApExceedsFormula(limit = 1000): number | null {
+  for (let level = 1; level <= limit; level++) {
+    if (victoryApExceedsFormula(level)) return level;
+  }
+  return null;
+}
+export function firstLevelVictoryMpExceedsCreateMax(
+  createMaxMp = Number(startingChampionStats().mp),
+  limit = 1000,
+): number | null {
+  const cap = Math.max(0, Math.floor(Number(createMaxMp) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (victoryMpFloor(level) > cap) return level;
+  }
+  return null;
+}
+
+/**
+ * `resolvePlayerCast` damage / drain loops never call `applyEffect` for
+ * `spell.debuffStat` (`spellEngine.ts` 876–1028). Frost −1 MP and Life Drain
+ * SP 0.8 stay catalog-only on the player path. Enemy AI still applies
+ * debuffs on its own casts.
+ */
+export const PLAYER_CAST_APPLIES_CATALOG_DEBUFF = false;
+export const FROST_MP_DEBUFF_MODIFIER = -1;
+export const LIFE_DRAIN_SP_DEBUFF_MODIFIER = 0.8;
+
+/**
+ * Arcane Overflow `onEffectApplication` keeps a flat 10% buff/debuff fizzle
+ * (`mapModifiers.ts` 325–332) after `spellFailChance` hits 0 at 201
+ * (09-24-002). DoTs are exempt; Shield / Haste still roll.
+ */
+export const ARCANE_OVERFLOW_EFFECT_FAIL_CHANCE = 0.1;
+export function arcaneOverflowEffectFailAfterSpellFailZero(
+  level: number,
+): number {
+  return spellFailChance(level) <= 0 ? ARCANE_OVERFLOW_EFFECT_FAIL_CHANCE : 0;
+}
+
 /** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
 export const HAZARD_LAVA_MIN = 8;
 export const HAZARD_LAVA_MAX = 15;
@@ -3308,6 +3498,103 @@ export function runLongHorizonSim() {
       paintOnlyChance: paintOnlyFamilyChance(),
       stringIdentityChance: stringIdentityFamilyChance(),
       familyVariantChance: FAMILY_VARIANT_CHANCE,
+    },
+    portalFlatXpVsThreshold: {
+      portalXp: PORTAL_TRANSITION_XP_SIM,
+      deathXpRate: DEATH_XP_PENALTY_RATE_SIM,
+      fractionAt1: portalXpFractionOfThreshold(1),
+      fractionAt100: portalXpFractionOfThreshold(100),
+      fractionAt1000: portalXpFractionOfThreshold(1000),
+      fractionAt100000: portalXpFractionOfThreshold(100_000),
+      portalsToRecoverNearFullBarAt1: portalsToRecoverDeathXp(99),
+      portalsToRecoverNearFullBarAt100: portalsToRecoverDeathXp(
+        xpThresholdBigInt(100) - 1n,
+      ),
+    },
+    kitZoneSaturatesAt2: {
+      firstLevelZone2: firstPlayerLevelIntendedKitZoneAtLeast(2),
+      zoneAt1: intendedKitZone(1),
+      zoneAt100: intendedKitZone(100),
+      zoneAt1000: intendedKitZone(1000),
+      zoneAt100000: intendedKitZone(100_000),
+      queenLiveObjectKit: queenKitIdsForZone({
+        name: "Tier 1 Zone",
+        minLevel: 1,
+        maxLevel: 10,
+      }),
+      queenIntendedAt1: queenKitIdsForZone(intendedKitZone(1)),
+      queenIntendedAt11: queenKitIdsForZone(intendedKitZone(11)),
+      queenIntendedAt100: queenKitIdsForZone(intendedKitZone(100)),
+      queenIntendedAt100000: queenKitIdsForZone(intendedKitZone(100_000)),
+    },
+    mapZoneLabelVs999Pick: {
+      overworldMaxTier: overworldMaxTier(),
+      labelAt1: mapZoneLabel(1),
+      labelAt100: mapZoneLabel(100),
+      labelAt1000: mapZoneLabel(1000),
+      labelAt100000: mapZoneLabel(100_000),
+      pickMaxWithAdjLeak: 1020,
+      dungeonMax: dungeonMaxEnemyLevel(),
+    },
+    killCountCounterFrozen: {
+      saveKillCountCalledFromPlay: SAVE_KILL_COUNT_CALLED_FROM_PLAY,
+      singleBattleBound: SAVE_KILL_COUNT_SINGLE_BATTLE_BOUND,
+      leaderboardStaysAtCreate: LEADERBOARD_KILL_COUNT_STAYS_AT_CREATE,
+      createKillCount: Number(startingChampionStats().killCount),
+    },
+    enemyUsableSpellPoolDead: {
+      poolAssigned: ENEMY_USABLE_SPELL_POOL_ASSIGNED,
+      randomAdvancedChance: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
+      chanceAt1: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
+      chanceAt100: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
+      chanceAt1000: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
+      chanceAt100000: ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
+    },
+    bloodMendChcBuffNeverApplied: {
+      applied: BLOOD_MEND_CHC_BUFF_APPLIED,
+      catalogModifier: BLOOD_MEND_BUFF_MODIFIER,
+      advertisedDelta: BLOOD_MEND_ADVERTISED_CHC_DELTA,
+      modifierAsPercentDelta: bloodMendBuffModifierAsPercentDelta(),
+      createChc: PLAYER_CREATE_CHC,
+    },
+    ironCurseHealHalvedNoOp: {
+      announceClaimsHalved: IRON_CURSE_ANNOUNCE_CLAIMS_HEAL_HALVED,
+      healActuallyHalved: IRON_CURSE_HEAL_HALVED,
+      bloodMendAt1: BLOOD_MEND_HEAL,
+      bloodMendAt100000: BLOOD_MEND_HEAL,
+    },
+    victoryApMpFloorVsFormula: {
+      victoryApAt1: victoryApFloor(1),
+      formulaApAt1: formulaAp(1),
+      victoryMpAt1: victoryMpFloor(1),
+      formulaMpAt1: formulaMp(1),
+      victoryApAt75: victoryApFloor(75),
+      formulaApAt75: formulaAp(75),
+      victoryMpAt75: victoryMpFloor(75),
+      formulaMpAt75: formulaMp(75),
+      victoryApAt1500: victoryApFloor(1500),
+      formulaApAt1500: formulaAp(1500),
+      victoryMpAt1500: victoryMpFloor(1500),
+      formulaMpAt1500: formulaMp(1500),
+      victoryApAt100000: victoryApFloor(100_000),
+      formulaApAt100000: formulaAp(100_000),
+      victoryMpAt100000: victoryMpFloor(100_000),
+      formulaMpAt100000: formulaMp(100_000),
+      firstLevelApExceedsFormula: firstLevelVictoryApExceedsFormula(),
+      firstLevelMpExceedsCreateMax: firstLevelVictoryMpExceedsCreateMax(),
+    },
+    playerCastCatalogDebuffsDropped: {
+      applied: PLAYER_CAST_APPLIES_CATALOG_DEBUFF,
+      frostMpDebuff: FROST_MP_DEBUFF_MODIFIER,
+      lifeDrainSpDebuff: LIFE_DRAIN_SP_DEBUFF_MODIFIER,
+      frostDumpCastsAt100000: playerFrostCastsPerTurn(formulaAp(100_000)),
+    },
+    arcaneOverflowFailAfterSpellFailZero: {
+      effectFailChance: ARCANE_OVERFLOW_EFFECT_FAIL_CHANCE,
+      spellFailAt201: spellFailChance(201),
+      overflowFailAt201: arcaneOverflowEffectFailAfterSpellFailZero(201),
+      overflowFailAt100000: arcaneOverflowEffectFailAfterSpellFailZero(100_000),
+      spellFailAt1: spellFailChance(1),
     },
   };
 }

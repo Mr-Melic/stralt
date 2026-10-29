@@ -4,9 +4,12 @@ import {
   APPLY_REWARDS_MAX_XP_DELTA,
 } from "./applyRewardsResult.ts";
 import {
+  ARCANE_OVERFLOW_EFFECT_FAIL_CHANCE,
   BATTLE_GRID_CELL_COUNT,
   BATTLE_START_PLAYER_IN_COMBATANTS_REF,
   BETRAYAL_ENRAGE_MULT,
+  BLOOD_MEND_BUFF_MODIFIER,
+  BLOOD_MEND_CHC_BUFF_APPLIED,
   BLOOD_MEND_CRIT_HEAL,
   BLOOD_MEND_HEAL,
   BOSS_RUSH_ROOM0_CATALOG_DOKA,
@@ -17,21 +20,28 @@ import {
   CRUSH_MELEE_SKIPS_PLAYER_TAKES_DAMAGE,
   CRUSH_MELEE_USES_GET_STAT_MODIFIER,
   DOKA_HEAL_HP_PER_DOKA,
+  ENEMY_RANDOM_ADVANCED_POOL_CHANCE,
   ENEMY_SUMMON_CAP_SIM,
+  ENEMY_USABLE_SPELL_POOL_ASSIGNED,
   ENEMY_WALK_STEP_BUDGET_SIM,
   FALLBACK_CRUSH_RANGE,
   FALLBACK_FIREBOLT_RANGE,
   FAMILIES_PAINT_ONLY_AFTER_STAT_WIPE,
   FAMILIES_WITH_STRING_COMBAT_HOOKS,
+  FROST_MP_DEBUFF_MODIFIER,
   GLASS_REALM_DMG_MULT,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
   INITIATIVE_OVERLAY_ENEMY_CHC,
   INITIATIVE_OVERLAY_ENEMY_RES,
+  IRON_CURSE_ANNOUNCE_CLAIMS_HEAL_HALVED,
+  IRON_CURSE_HEAL_HALVED,
   KIT_FROST_DAMAGE,
   KIT_INFERNO_DIRECT_DAMAGE,
   KIT_STRIKE_DAMAGE,
+  LEADERBOARD_KILL_COUNT_STAYS_AT_CREATE,
   LIFE_DRAIN_HEAL,
+  LIFE_DRAIN_SP_DEBUFF_MODIFIER,
   MAP_MODIFIER_POOL_SIZE,
   MAX_ENEMIES_SIM,
   MIRROR_FIELD_CANCELS_HIT,
@@ -42,6 +52,7 @@ import {
   PAPER_WINDSTORM_ADVERTISED_RANGE_REDUCTION,
   PAPER_WINDSTORM_PLAYER_MISS_CHANCE,
   PAPER_WINDSTORM_RANGE_REDUCTION_APPLIED,
+  PLAYER_CAST_APPLIES_CATALOG_DEBUFF,
   PLAYER_CREATE_EVASION,
   PLAYER_CREATE_INIT,
   PLAYER_CREATE_RESILIENCE,
@@ -49,6 +60,9 @@ import {
   PLAYER_DAMAGE_DEALT_ATTACKER_IS_LIVE_STATS,
   PLAYER_SUMMON_CAP_LIVE,
   PLAYER_TURN_START_COMMITS_MENDING_MIST,
+  PORTAL_TRANSITION_XP_SIM,
+  SAVE_KILL_COUNT_CALLED_FROM_PLAY,
+  SAVE_KILL_COUNT_SINGLE_BATTLE_BOUND,
   SHIELD_CHARM_ABSORB,
   SUMMON_ARCHER_HP_SCALE,
   SUMMON_BOMBER_HP_SCALE,
@@ -66,7 +80,9 @@ import {
   VOID_MIRROR_REFLECT_FRACTION,
   WORLD_BOSS_LEVEL_OFFSET,
   WORLD_BOSS_SPAWN_RES_CLAMP,
+  arcaneOverflowEffectFailAfterSpellFailZero,
   arcaneSurgeApCost,
+  bloodMendBuffModifierAsPercentDelta,
   bossRushCombatHp,
   bossRushEnemyLevel,
   bossRushRoomDoka,
@@ -119,12 +135,15 @@ import {
   firstLevelStackedArcaneFrostCastsAtLeast,
   firstLevelTideShadeDebuffBelowMpPercent,
   firstLevelTimestepFrostCastsAtLeast,
+  firstLevelVictoryApExceedsFormula,
+  firstLevelVictoryMpExceedsCreateMax,
   firstPlayerLevelBossRushCrushOneShots,
   firstPlayerLevelBossRushHpExceedsCatalog,
   firstPlayerLevelBossRushRoomDokaExceedsCatalog,
   firstPlayerLevelBossRushRoomDokaHitsClamp,
   firstPlayerLevelBossRushRoomXpHitsClamp,
   firstPlayerLevelDokaHealFromOneExceeds,
+  firstPlayerLevelIntendedKitZoneAtLeast,
   firstPlayerLevelMistRegenExceeds,
   firstPlayerLevelPotionBeatsFlatDokaHeal,
   firstPlayerLevelSacrificeRawExceeds,
@@ -149,6 +168,7 @@ import {
   groundDokaMean,
   healthPotionDokaPerHp,
   healthPotionHpRestored,
+  intendedKitZone,
   ironCursedRes,
   jackpotPersistIfHit,
   jackpotUnclampedMean,
@@ -157,6 +177,7 @@ import {
   kitForZoneInput,
   linearEnemyMaxHp,
   linearPlayerMaxHp,
+  mapZoneLabel,
   mendingMistRegenAtPlayerLevel,
   mirrorFieldReflect,
   noopModifierFirstPickChance,
@@ -164,6 +185,7 @@ import {
   overlayEnemyAp,
   overlayEnemyAtk,
   overlayEnemyMp,
+  overworldMaxTier,
   overworldPickMaxLevel,
   paintOnlyFamilyChance,
   paperWindstormEnemyMissChance,
@@ -178,6 +200,9 @@ import {
   playerSummonCastsPerTurn,
   playerSummonStatBounds,
   playerTurnStartFindsPlayerIn,
+  portalXpFractionOfThreshold,
+  portalsToRecoverDeathXp,
+  queenKitIdsForZone,
   runLongHorizonSim,
   sacrificeDamageAfterEnemyRes,
   sacrificeRawAtFullHp,
@@ -207,7 +232,11 @@ import {
   titansMaxChip1,
   titansVigorHp,
   vampiricHeal,
+  victoryApExceedsFormula,
+  victoryApFloor,
   victoryHpFloor,
+  victoryMpExceedsFormula,
+  victoryMpFloor,
   voidMirrorFamilyChance,
   voidMirrorReflect,
   walkCostPerTile,
@@ -885,6 +914,117 @@ assert.equal(report.noopModifierSlotsAndPaintFamilies.poolSize, 22);
 assert.equal(
   report.noopModifierSlotsAndPaintFamilies.paintOnlyChance,
   0.3 * (4 / 7),
+);
+
+assert.equal(PORTAL_TRANSITION_XP_SIM, 10);
+assert.equal(portalXpFractionOfThreshold(1), 0.1);
+assert.ok(
+  Math.abs(portalXpFractionOfThreshold(100) - 10 / xpNeedExactAsNumber(100)) <
+    1e-40,
+);
+assert.ok(portalXpFractionOfThreshold(100) < 1e-30);
+assert.ok(portalXpFractionOfThreshold(1000) < 1e-300);
+assert.equal(portalXpFractionOfThreshold(100_000), 0);
+assert.equal(portalsToRecoverDeathXp(99), 2);
+assert.equal(report.portalFlatXpVsThreshold.fractionAt1, 0.1);
+assert.ok(report.portalFlatXpVsThreshold.fractionAt100 < 1e-30);
+assert.equal(report.portalFlatXpVsThreshold.fractionAt100000, 0);
+assert.equal(report.portalFlatXpVsThreshold.portalsToRecoverNearFullBarAt1, 2);
+assert.ok(
+  report.portalFlatXpVsThreshold.portalsToRecoverNearFullBarAt100 > 1e29,
+);
+
+assert.equal(firstPlayerLevelIntendedKitZoneAtLeast(2), 11);
+assert.equal(intendedKitZone(1), 1);
+assert.equal(intendedKitZone(100), 10);
+assert.equal(intendedKitZone(1000), 100);
+assert.equal(intendedKitZone(100_000), 10_000);
+assert.deepEqual(queenKitIdsForZone(intendedKitZone(1)), [
+  "starter-frost",
+  "starter-heal",
+]);
+assert.deepEqual(queenKitIdsForZone(intendedKitZone(11)), [
+  "spell-inferno",
+  "starter-heal",
+]);
+assert.deepEqual(
+  queenKitIdsForZone(intendedKitZone(100)),
+  queenKitIdsForZone(intendedKitZone(100_000)),
+);
+assert.deepEqual(
+  queenKitIdsForZone({ name: "Tier 1 Zone", minLevel: 1, maxLevel: 10 }),
+  ["starter-frost"],
+);
+assert.equal(report.kitZoneSaturatesAt2.firstLevelZone2, 11);
+assert.deepEqual(report.kitZoneSaturatesAt2.queenIntendedAt100000, [
+  "spell-inferno",
+  "starter-heal",
+]);
+
+assert.equal(overworldMaxTier(), 99);
+assert.deepEqual(mapZoneLabel(1), {
+  zoneTier: 1,
+  minLevel: 1,
+  maxLevel: 10,
+});
+assert.deepEqual(mapZoneLabel(100_000), {
+  zoneTier: 10_000,
+  minLevel: 99_991,
+  maxLevel: 100_000,
+});
+assert.equal(report.mapZoneLabelVs999Pick.labelAt100000.maxLevel, 100_000);
+assert.equal(report.mapZoneLabelVs999Pick.pickMaxWithAdjLeak, 1020);
+
+assert.equal(SAVE_KILL_COUNT_CALLED_FROM_PLAY, false);
+assert.equal(SAVE_KILL_COUNT_SINGLE_BATTLE_BOUND, 64);
+assert.equal(LEADERBOARD_KILL_COUNT_STAYS_AT_CREATE, true);
+assert.equal(report.killCountCounterFrozen.createKillCount, 0);
+assert.equal(report.killCountCounterFrozen.saveKillCountCalledFromPlay, false);
+
+assert.equal(ENEMY_USABLE_SPELL_POOL_ASSIGNED, false);
+assert.equal(ENEMY_RANDOM_ADVANCED_POOL_CHANCE, 0);
+assert.equal(report.enemyUsableSpellPoolDead.chanceAt1, 0);
+assert.equal(report.enemyUsableSpellPoolDead.chanceAt100000, 0);
+
+assert.equal(BLOOD_MEND_CHC_BUFF_APPLIED, false);
+assert.equal(BLOOD_MEND_BUFF_MODIFIER, 0.15);
+assert.equal(bloodMendBuffModifierAsPercentDelta(), -0.85);
+assert.equal(report.bloodMendChcBuffNeverApplied.applied, false);
+assert.equal(report.bloodMendChcBuffNeverApplied.modifierAsPercentDelta, -0.85);
+
+assert.equal(IRON_CURSE_HEAL_HALVED, false);
+assert.equal(IRON_CURSE_ANNOUNCE_CLAIMS_HEAL_HALVED, true);
+assert.equal(report.ironCurseHealHalvedNoOp.healActuallyHalved, false);
+
+assert.equal(victoryApFloor(1), 6);
+assert.equal(victoryMpFloor(1), 5);
+assert.equal(formulaAp(1), 8);
+assert.equal(formulaMp(1), 4);
+assert.equal(victoryMpExceedsFormula(1), true);
+assert.equal(firstLevelVictoryApExceedsFormula(), 220);
+assert.equal(firstLevelVictoryMpExceedsCreateMax(), 10);
+assert.equal(victoryApFloor(100_000), 5006);
+assert.equal(formulaAp(100_000), 4008);
+assert.equal(victoryMpFloor(100_000), 10005);
+assert.equal(formulaMp(100_000), 4004);
+assert.equal(report.victoryApMpFloorVsFormula.firstLevelApExceedsFormula, 220);
+assert.equal(report.victoryApMpFloorVsFormula.victoryMpAt100000, 10005);
+
+assert.equal(PLAYER_CAST_APPLIES_CATALOG_DEBUFF, false);
+assert.equal(FROST_MP_DEBUFF_MODIFIER, -1);
+assert.equal(LIFE_DRAIN_SP_DEBUFF_MODIFIER, 0.8);
+assert.equal(
+  report.playerCastCatalogDebuffsDropped.frostDumpCastsAt100000,
+  1336,
+);
+
+assert.equal(ARCANE_OVERFLOW_EFFECT_FAIL_CHANCE, 0.1);
+assert.equal(spellFailChance(201), 0);
+assert.equal(arcaneOverflowEffectFailAfterSpellFailZero(201), 0.1);
+assert.equal(arcaneOverflowEffectFailAfterSpellFailZero(100_000), 0.1);
+assert.equal(
+  report.arcaneOverflowFailAfterSpellFailZero.overflowFailAt201,
+  0.1,
 );
 
 console.log("longHorizonSim.test: ok");
