@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Skull } from "lucide-react";
 import type React from "react";
+import { useLayoutEffect } from "react";
+import { setDeathOverlayActive } from "../engine/deathOverlayActivity";
 
 interface GameOverModalProps {
   isOpen: boolean;
@@ -23,6 +25,18 @@ const GameOverModal: React.FC<GameOverModalProps> = ({
   xpLost,
   dokaLost,
 }) => {
+  // PERF-2026-10-28-201: death clears inBattle before this modal mounts,
+  // which would otherwise resume Chat getMessages. Layout (not passive)
+  // so GameFlow can re-render isPaused before ChatPanel's poll effect
+  // calls fetchMessages() on the same commit. Cleanup clears on Respawn
+  // / leave-world unmount.
+  useLayoutEffect(() => {
+    setDeathOverlayActive(isOpen);
+    return () => {
+      setDeathOverlayActive(false);
+    };
+  }, [isOpen]);
+
   return (
     <AlertDialog
       open={isOpen}
