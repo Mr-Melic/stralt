@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { computeDeathPenalty } from "./deathPenalty.ts";
 import {
   expectedSinglePostCreditDeathCut,
@@ -9,6 +12,16 @@ import {
   simulateDeathDuringQueuedCredit,
   withDeathPersistInFlight,
 } from "./deathPersistInFlightFlushGate.ts";
+
+function wxSource(): string {
+  return readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../components/WorldExploration.tsx",
+    ),
+    "utf8",
+  );
+}
 
 const PRE_XP = 1000;
 const PRE_DOKA = 500;
@@ -171,5 +184,35 @@ describe("withDeathPersistInFlight", () => {
       newXp: 800,
       newDoka: 300,
     });
+  });
+});
+
+describe("live WX leftover (unwired sidecar)", () => {
+  it("always flushes in beforeEach; death enqueue skips then recomputes", () => {
+    const wx = wxSource();
+    assert.ok(
+      wx.includes("progressPersistRef.current.setBeforeEach"),
+      "persist lock still installs a beforeEach flush",
+    );
+    assert.ok(
+      wx.includes("await flushPendingDeathPenalty({"),
+      "beforeEach still always flushes unpaid death",
+    );
+    assert.equal(
+      wx.includes("shouldFlushPendingDeathBeforeCredit"),
+      false,
+      "WX still does not gate flush on deathPersistInFlight",
+    );
+    assert.equal(wx.includes("withDeathPersistInFlight"), false);
+    assert.equal(wx.includes("deathPersistInFlight"), false);
+
+    assert.ok(
+      wx.includes("const after = computeDeathPenalty("),
+      "death persist still recomputes 20/40 on the committed snapshot",
+    );
+    assert.ok(
+      wx.includes("{ skipBeforeEach: true }"),
+      "death persist still skips its own beforeEach",
+    );
   });
 });

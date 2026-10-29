@@ -123,8 +123,13 @@ export async function simulateDeathDuringQueuedCredit(args: {
     pendingClearedByFlush = true;
   };
 
-  const creditJob = lock.enqueue(async () => {
+  // Mirror live WX `setBeforeEach` → flush. skipBeforeEach on death does
+  // not protect this prior credit job's beforeEach.
+  lock.setBeforeEach(async () => {
     runBeforeEachFlush();
+  });
+
+  const creditJob = lock.enqueue(async () => {
     const snap = lock.snapshot();
     lock.commit({
       xp: snap.xp + creditXp,

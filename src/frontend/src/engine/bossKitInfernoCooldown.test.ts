@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { starterSpells } from "../data/spellData.ts";
+import type { ActiveEffect } from "../types/gameTypes.ts";
 import {
   BOSS_KIT_INFERNO_ADVERTISED_COOLDOWN,
   BOSS_KIT_INFERNO_DOT_DURATION,
@@ -27,6 +28,7 @@ import {
   simulateCrimsonCountessInfernoCooldown,
   tickBossKitSpellCooldown,
 } from "./bossKitInfernoCooldown.ts";
+import { appendDotStack, sumDotTicks } from "./dotStacks.ts";
 
 function here(): string {
   return dirname(fileURLToPath(import.meta.url));
@@ -236,5 +238,21 @@ describe("boss kit Inferno advertised cooldown 3", () => {
       three.advertisedInfernoCasts * BOSS_KIT_INFERNO_DOT_PER_TURN,
       8,
     );
+
+    let stacked: ActiveEffect[] = [];
+    for (let i = 0; i < three.liveInfernoCasts; i++) {
+      stacked = appendDotStack(stacked, {
+        id: `boss-dot-${i}`,
+        effectName: "Inferno DoT",
+        type: "dot",
+        targetId: "player",
+        duration: BOSS_KIT_INFERNO_DOT_DURATION,
+        iconEmoji: "\u2620\uFE0F",
+        description: `${BOSS_KIT_INFERNO_DOT_PER_TURN} dmg/turn`,
+        dotDamagePerTurn: BOSS_KIT_INFERNO_DOT_PER_TURN,
+      });
+    }
+    assert.equal(sumDotTicks(stacked, "player"), 24);
+    assert.equal(sumDotTicks(stacked.slice(0, 1), "player"), 8);
   });
 });

@@ -165,7 +165,8 @@ export type BossKitInfernoCooldownSequence = {
  * Crimson Countess phase-1 pool over `turns` boss turns.
  * Live: Inferno every turn. Advertised: Inferno, then CD 3 ticks at each
  * following turn start before decide (WX ~15501) so Drain fills the gap
- * until remaining hits 0 — Inferno again on the 4th turn after a cast.
+ * until remaining hits 0 — Inferno again on boss turn 4 of the sequence
+ * (two Drain fills).
  */
 export function simulateCrimsonCountessInfernoCooldown(
   turns: number,
