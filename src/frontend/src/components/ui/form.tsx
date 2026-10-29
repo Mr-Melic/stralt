@@ -150,6 +150,7 @@ function FormMessage({ className, ...props }: React.ComponentProps<"p">) {
       id={formMessageId}
       className={cn("text-destructive text-sm", className)}
       {...props}
+      role={error ? "alert" : undefined}
     >
       {body}
     </p>
