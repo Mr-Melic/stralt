@@ -63,7 +63,9 @@ describe("playerFacingCastResult", () => {
   it("unifies sprite and tile no-AP / cooldown / abort copy", () => {
     assert.equal(playerFacingCastResult("no_ap"), "Not enough AP");
     assert.equal(playerFacingCastResult("on_cooldown"), "On cooldown");
-    assert.equal(playerFacingCastResult("abort"), "Aborted");
+    assert.equal(playerFacingCastResult("abort"), "Cast cancelled");
     assert.equal(playerFacingCastResult("fizzled"), "Cast fizzled!");
+    assert.equal(playerFacingCastResult("no_los"), "Cast failed");
+    assert.equal(playerFacingCastResult(""), "Cast failed");
   });
 });
