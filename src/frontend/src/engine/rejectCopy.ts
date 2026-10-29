@@ -59,6 +59,8 @@ export function playerFacingRejectReason(reason: string): string {
 export function playerFacingCastResult(castResult: string): string {
   if (castResult === "no_ap") return "Not enough AP";
   if (castResult === "on_cooldown") return "On cooldown";
-  if (castResult === "abort") return "Aborted";
-  return `Cast ${castResult}!`;
+  if (castResult === "abort") return "Cast cancelled";
+  const token = String(castResult ?? "").trim();
+  if (!token || token.includes("_")) return "Cast failed";
+  return `Cast ${token}!`;
 }
