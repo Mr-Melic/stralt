@@ -110,6 +110,10 @@ import {
 } from "../engine/castHelpers";
 import { spawnDamageAtTile, triggerDeathAtTile } from "../engine/combatJuice";
 import {
+  drawRowShimmerOverlay,
+  rowShimmerAlpha,
+} from "../engine/combatLumaOverlay";
+import {
   calcScaledDamage,
   computeAITier,
   computeEnemyStats,
@@ -7385,7 +7389,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     for (let y = 0; y < WORLD_GRID_SIZE; y++) {
       // ── E. Sine-wave shimmer: per-row brightness offset ─────────────────────
       if (!currentMap.tiles[y]) continue;
-      const shimmerAlpha = Math.max(0, Math.sin(now * 0.0008 + y * 0.3) * 0.03);
+      const shimmerAlpha = rowShimmerAlpha(now, y);
 
       // Pass 1: floor tiles for this row
       for (let x = 0; x < WORLD_GRID_SIZE; x++) {
@@ -7536,24 +7540,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
 
           // ── E. Apply row shimmer overlay ─────────────────────────────────
-          if (shimmerAlpha > 0) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(
-              screenPos.x + effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
-            );
-            ctx.lineTo(screenPos.x, screenPos.y + effectiveTileH);
-            ctx.lineTo(
-              screenPos.x - effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
-            );
-            ctx.closePath();
-            ctx.fillStyle = `rgba(255,255,255,${shimmerAlpha})`;
-            ctx.fill();
-            ctx.restore();
-          }
+          // Paint lives in engine/combatLumaOverlay.ts. Do not fold into
+          // tilePaint, mapHazardPaint, combatTileOverlay, or shadeFloorOcclusion.
+          drawRowShimmerOverlay(
+            ctx,
+            screenPos.x,
+            screenPos.y,
+            effectiveTileW,
+            effectiveTileH,
+            shimmerAlpha,
+          );
 
           // ── A. Tile ambient occlusion ────────────────────────────────────
           const aoMask = aoMaskRef.current;
