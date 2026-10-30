@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { respawnHpAfterDeath } from "./deathPenalty.ts";
 import {
   leftoverUnpaidHealHpAfterRenameFeat,
   liveWxAndsFailedHealRollbackForRenameFeat,
@@ -179,5 +180,10 @@ describe("failed heal + rename/feat overlap unpaid HP", () => {
     assert.equal(local.laterAbsoluteWrote, false);
     assert.equal(local.canisterHp, 50);
     assert.equal(local.liveHp, 200);
+  });
+
+  it("death persist writes respawn HP, not the unpaid heal bar", () => {
+    assert.equal(respawnHpAfterDeath(1), 50);
+    assert.notEqual(respawnHpAfterDeath(1), 200);
   });
 });

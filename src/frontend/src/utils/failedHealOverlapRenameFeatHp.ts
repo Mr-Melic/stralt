@@ -9,9 +9,11 @@
  * They still break `shouldRollbackFailedHeal`'s AND: the UI debit/credit
  * lands after their await, while a heal enqueued behind them is in flight.
  * Heal `.then` sees liveDoka ≠ expectedDoka and skips the whole rollback.
- * Unpaid HP stays on `characterStatsRef` until a later absolute write
- * (BuffShop Buy / another heal / death) calls
- * `resolveAbsoluteWriteHp(live, …)` and persists it.
+ * Unpaid HP stays on `characterStatsRef` until a later
+ * `persistAbsoluteProgress` (BuffShop Buy) calls
+ * `resolveAbsoluteWriteHp(live, clickHp)` and persists it. Death persist
+ * writes `respawnHpAfterDeath`, so it overwrites the ghost rather than
+ * minting it. A second Heal no-ops while the bar is already full.
  *
  * Production (`WorldExploration.tsx`):
  *   - Rename UI debit after await (2105–2157) — not reserved on begin.
@@ -30,8 +32,10 @@
  *    `liveDokaAfterRename(150) → 50` (debit from post-heal wallet).
  * 5. Heal persist returns false. AND rollback: liveDoka 50 ≠ expected
  *    150 → no-op. Unpaid HP 200 stays on the ref.
- * 6. BuffShop Buy (or death / later heal) runs
- *    `persistAbsoluteProgress(liveHp=200, …)` → canister HP 200.
+ * 6. Heal `.then` sets `dokaHealInFlightRef` false. A later BuffShop Buy
+ *    runs `persistAbsoluteProgress(liveHp=200, …)` → canister HP 200.
+ *    #1326's shop-while-heal gate does not apply (in-flight already
+ *    cleared).
  *
  * Feat / GameKey credit the wallet up instead of down; AND still fails
  * and the later absolute write stamps the same unpaid HP.
@@ -198,7 +202,8 @@ export function simulateRenameFeatBeforeFailedHeal(args: {
     liveDoka = startDoka;
   }
 
-  // Later BuffShop Buy (or death) absolute-writes live HP.
+  // Later BuffShop Buy absolute-writes live HP. Death persist is not this
+  // stamp: it writes respawn HP, not the unpaid heal bar.
   let laterAbsoluteWrote = false;
   if (laterShopCost > 0 && liveDoka >= laterShopCost) {
     laterAbsoluteWrote = true;
