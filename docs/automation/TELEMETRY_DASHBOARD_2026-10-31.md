@@ -43,8 +43,13 @@ that #1292 could not yet list, the 10-30 product swarm, and same-hour
 Open PRs targeting `main` at first inspect (~00:03Z): **1022**. Newest
 open PR then: [#1353](https://github.com/Mr-Melic/stralt/pull/1353)
 (2026-10-30T21:11:11Z). Newest **merged** commit is still #332 (2026-09-03).
-Same-hour 10-31 siblings: first inspect had **0**. Later swarm expected
-while this file is written.
+Same-hour 10-31 siblings: first inspect had **0**; while writing,
+[#1354](https://github.com/Mr-Melic/stralt/pull/1354) test,
+[#1355](https://github.com/Mr-Melic/stralt/pull/1355) TBC,
+[#1356](https://github.com/Mr-Melic/stralt/pull/1356) GTAD,
+[#1357](https://github.com/Mr-Melic/stralt/pull/1357) dead-code, and
+[#1358](https://github.com/Mr-Melic/stralt/pull/1358) meta opened.
+Later swarm expected.
 
 ---
 
@@ -228,8 +233,8 @@ move. No TADD skip ran on 10-30. Additional **open** drafts that are
 | Open PRs | Kind | Health rule |
 | :--- | :--- | :--- |
 | #345 / #424 / #455 / #504 / #559 / #616 / #668 / #750 / #801 / #827 / #879 / #936 / #988 / #1048 / #1118 / #1191 / #1243 / **#1292** | Prior TADD matrices, same SHA | **One** H1–H14 spec. Union docs; do not concatenate UI. |
-| #333 / #395 / #462 / #502 / #556 / #582 / #609 / #640 / #661 / #725 / #768 / #833 / #871 / #928 / #994 / #1053 / #1108 / #1165 / #1232 / **#1277** TBC | WAITING_FOR_TELEMETRY / balance analysis, 0 rows | Do not paint as zero battles. |
-| #352 / #422 / #450 / #527 / #583 / #641 / #682 / #722 / #806 / #816 / #884 / #931 / #981 / #1047 / #1116 / #1180 / #1233 / **#1282** GTAD | Architecture + Phase 1 extras | AQA-012 seven counters only. |
+| #333 / #395 / #462 / #502 / #556 / #582 / #609 / #640 / #661 / #725 / #768 / #833 / #871 / #928 / #994 / #1053 / #1108 / #1165 / #1232 / #1277 / **#1355** TBC | WAITING_FOR_TELEMETRY / balance analysis, 0 rows | Do not paint as zero battles. |
+| #352 / #422 / #450 / #527 / #583 / #641 / #682 / #722 / #806 / #816 / #884 / #931 / #981 / #1047 / #1116 / #1180 / #1233 / #1282 / **#1356** GTAD | Architecture + Phase 1 extras | AQA-012 seven counters only. |
 | #355 / #418 / #461 / #520 / #586 / #624 / #694 / #715 / #782 / #835 / #880 / #930 / #990 / #1051 / #1110 / #1169 / #1228 / **#1290** VAL | Visual library design | No custom-URL loader. No `CUSTOM_FALLBACK` series. |
 | #371 / #480 / #533 / #590 / #646 / #679 / #802 / #837 / #893 / #906 / #962 / #1017 / #1082 / #1143 / #1198 / #1255 / **#1313** SDE | Observe→win design | No `observedSpellIds` / `ownedSpellIds` persist. |
 | Formations / elites / AI docs through #1237 / #1240 / #1248 / **#1294** / **#1305** / **#1307** | Design copies | No encounter / elite / archetype usage charts. |
@@ -237,7 +242,7 @@ move. No TADD skip ran on 10-30. Additional **open** drafts that are
 | #398 / #473 / #515 / #570 / #630 / #677 / #729 / #791 / #815 / #892 / #940 / #1007 / #1078 / #1140 / #1187 / #1226 / **#1291** SDA | Spell/discovery admin re-audit | Catalog UX, not a discovery store. |
 | **#1287–#1291** and **#1293–#1332** (rest of 10-29 after #1292) | Expansion #1287 / test #1288 / world-dungeon #1289 / VAL #1290 / SDA #1291 / admin drift #1293 / formations #1294 / diversity #1295 / a11y #1296 / dead-code #1297 / UX #1298 / persist tests #1299 / PX #1300 / combat #1301 / boss sheets #1302 / encounters #1303 / MIMA #1304 / elites #1305 / GFCF #1306 / AI #1307 / persist feat #1308 / spell proposals #1309 / economy #1310 / extract #1311 / LHIPS #1312 / SDE #1313 / perf #1314 / combat-map-economy-persist through #1332 (newest 10-29: Archbishop Phase 2 #1332, 2026-10-29T21:09:06Z) | Not collectors. Do not scrape tests, remount PRs, #961/#995/#1076/#1109/#1196/#1241/#1311 extracts, #1313 SDE, #1291 SDA, #1290 VAL, or #1282 GTAD as telemetry / custom-URL load. |
 | 10-30 product swarm **#1333–#1353** | Combat advertised-stats, persist heal/death races, map crumbs, tests (newest at first inspect: Lich Phase 2 #1353, 2026-10-30T21:11:11Z). No TADD / GTAD / TBC / VAL / SDE that day. | Not collectors. A resumed combat swarm is not a Health metric. |
-| Same-hour 10-31 copies | Dated copies: **0** at ~00:03Z inspect. Later swarm expected. | Same fence. Do not scrape later TBC zeros as zero battles, later GTAD Phase 1 extras, VAL, SDE, or extract filenames as collectors. |
+| Same-hour 10-31 copies | Dated copies: **0** at ~00:03Z inspect; while writing, **#1354** test / **#1355** TBC / **#1356** GTAD / **#1357** dead-code / **#1358** meta. Later swarm expected. | Same fence. Do not scrape #1355 TBC zeros as zero battles. Do not scrape #1356 GTAD Phase 1 extras, later VAL, SDE, or extract filenames as collectors. |
 
 ---
 
