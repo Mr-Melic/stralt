@@ -34,10 +34,12 @@ Do not implement gameplay to chase engagement metrics. This run **does not auto-
 | 18 | Character rename / create success-fail feel | **Reject** — create/update + rename already toast ok/err |
 | 19 | Jackpot heal feel | **Reject** — banner + toast + battle log already fire |
 | 20 | Occupied PLAYER walk dest | **Reject** — mouse/touch walk already float `"Occupied"` (`WX` 10513–10517 / 11098–11101); summon dest stays 09-25-005 |
-| 21 | Persist-fail AFTER optimistic toast/log (unfiled) | Covered by `10-31-004` shrine; other sites already filed through 10-28 |
+| 21 | Persist-fail AFTER optimistic toast/log (unfiled) | Shrine release = `10-31-004`. **Also NEW** spell-bar optimistic HUD (`10-31-005`) and BR `completeBossRushRoom` empty catch (`10-31-006`). Already filed: shop 10-25-004, heal 10-26-002, victory 10-26-003, death 10-27-001, portal XP 10-27-004, dungeon trophy 10-28-001, feat unlock 10-28-002, BR room-advance 10-28-003. Ground Doka stays 10-26 non-hole. `#803` abort skip |
 | 22 | Recap surfaces that lie/omit (sanctuary/rest/overworld boss) | Overworld boss naming = `10-31-001`; emptied `dokaBreakdown` stays 10-29-002; BR boss names stay 10-29-003; sanctuary/rest have no battle recap path |
 
-## Unique NEW (4)
+## Unique NEW (6)
+
+Follow-up persist-fail INFORMATION hunt (`bc-57831d4f-ed16-534c-8b15-87a05b2963aa`) unions two more IDs onto this ledger without rewriting 001–004.
 
 ### GFCF-2026-10-31-001 — Overworld boss victory never names the boss on recap
 
@@ -87,6 +89,49 @@ Altar step `tryClaimFlag` then enqueues `persistDokaCreditResult(300)` (`WX` 113
 
 **Confidence:** HIGH
 
+### GFCF-2026-10-31-005 — Spell-bar `setSpellBarOrder` persist-fail after optimistic HUD
+
+`handleSetActiveSpells` paints `setActiveSpellIds(optimisticIds)` (`WX` 2888) and writes localStorage before debounced `flushSpellBarSave`. `#err` / throw → `console.error("[SpellOrderSave]…")` only (`WX` 2970–2973, 3022) plus a silent 2s one-shot retry. Initial empty-order path paints `first8` then saves with `console.error` / `console.warn` only (`WX` 2617–2659). Reload before `#ok` restores the stale canister bar.
+
+**Distinct from** 10-24-003 spell-*book upgrade* toast/fail (`upgradeSpell` awaits before any HUD debit/level write — missing copy, not show-then-silent-fail). Distinct from shrine 004 / filed credit persist-fails through 10-28-003.
+
+**Applies on main:** yes — optimistic bar + console-only fail is live.
+
+**ACTION:** `toast.error` once when `#err` / throw remains after the scheduled retry (or on first fail). Keep dirty-guard / one-shot retry. Do not toast every successful bar save.
+
+**Confidence:** HIGH
+
+### GFCF-2026-10-31-006 — `completeBossRushRoom` empty-catch after room-clear / final sanctuary already shown
+
+`persistBossRushRoomClear` → `completeClearedRoom` (`hooks/bossRushProgress.ts` 184–194) swallows `completeBossRushRoom` rejects with an empty `catch { }` (no console, no toast). Wallet `applyRewards` is intentionally not blocked. Non-final: recap already shown without awaiting persist (`WX` 12925–12928). Final: white sanctuary + gateway log (`WX` 12697–12727) run **before** the rewards persist block. Master complete / run count / `highestRoomCompleted` can miss while the player already believes the clear/run finished.
+
+**Distinct from** 10-26-003 room-clear *reward* catch, 10-28-003 portal-step `setBossRushProgress` after spawn, #803 abort/complete(9) order, #845 Complete *banner*, 10-29-004 resume-*read*.
+
+**Applies on main:** yes — empty catch is live.
+
+**ACTION:** `console.error` + one `toast.error` on reject. Do not block `applyRewards`. Do not reorder #803.
+
+**Confidence:** HIGH
+
+## Persist-fail hunt — already filed / non-holes (do not re-report)
+
+| Path | Status |
+| :--- | :--- |
+| Shop Buy persist-fail | 10-25-004 |
+| Overworld Doka-heal success toast then fail (HUD may rollback) | 10-26-002 |
+| Victory/recap + BR room-clear reward catch | 10-26-003 |
+| Death-penalty after Game Over 20/40 | 10-27-001 |
+| Portal +10 after map swap | 10-27-004 |
+| Dungeon-complete trophy log | 10-28-001 |
+| Feat unlock before `markAchievementUnlocked` | 10-28-002 |
+| BR room-advance after spawn | 10-28-003 |
+| `abortBossRush` | #803 skip |
+| Ground Doka float/log before commit | 10-26 non-hole |
+| Rename / GameKey / feat *claim* / createCharacter / ProfileSetup / announced shop credit | Already `toast.error` on fail |
+| `upgradeSpell` console.warn only | No optimistic success HUD — 10-24-003 |
+| `saveUserUiLayout` console.warn | Intentional local-first cache + retry |
+| White/rest gen-fail | Toast only on success path — AQA/GMI |
+
 ## Explicit rejects (closest almost-holes)
 
 - **Standing lava/spikes turn-start** — mechanic absent; walk-on has RAF juice (011) / enemy landing (09-27-003); plague/void numbers (09-24-002).
@@ -106,4 +151,4 @@ Altar step `tryClaimFlag` then enqueues `persistDokaCreditResult(300)` (`WX` 113
 
 ## Ownership / stack
 
-Docs-only. Do not wire WX on this branch. Oldest WX sibling remains **#327**. Feel float queues: **#363**, **#419**, **#478**, **#523**, **#571**, **#610**, **#678**, **#735**, **#772**, **#845**, **#894**, **#954**, **#1003**, **#1061**, **#1133**, **#1184**, **#1227**, **#1306**. Recap chrome: **#845** / **#354**. Overworld boss reward snapshot: **#1341** (union; do not overwrite).
+Docs-only. Do not wire WX / `bossRushProgress.ts` on this branch. Oldest WX sibling remains **#327**. Feel float queues: **#363**, **#419**, **#478**, **#523**, **#571**, **#610**, **#678**, **#735**, **#772**, **#845**, **#894**, **#954**, **#1003**, **#1061**, **#1133**, **#1184**, **#1227**, **#1306**. Recap chrome: **#845** / **#354**. Overworld boss reward snapshot: **#1341** (union; do not overwrite). Boss Rush abort/complete order: **#803** (union `bossRushProgress.ts`; do not overwrite). Persist-fail follow-up run: `bc-57831d4f-ed16-534c-8b15-87a05b2963aa`.

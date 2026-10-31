@@ -28,9 +28,9 @@ Prior IDs `GFCF-2026-08-31-001` … `015` live in `ACTION_IDS_2026-08-31.md`.
 `GFCF-2026-10-29-001` … `004` are **queued in #1306** (not on `main`).  
 This file records **new unique** recommendations only. Do not re-open prior IDs as NEW.
 
-No IDs were auto-implemented this run: remaining unique holes require `WorldExploration.tsx` (`handleBattleEnd` pre-cleanup boss snapshot, phase-2 heal float, shrine persist-fail toast) and `castHelpers.ts` (surface `_resistNote`). Oldest WX owner is **#327**; **#363** / **#419** already queue feel floats. **#845** / **#354** own Recap chrome. **#1341** owns overworld-boss reward snapshot — union, do not overwrite; this ledger’s 001 is *naming* only.
+No IDs were auto-implemented this run: remaining unique holes require `WorldExploration.tsx` (`handleBattleEnd` pre-cleanup boss snapshot, phase-2 heal float, shrine persist-fail toast, spell-bar save fail toast) , `castHelpers.ts` (surface `_resistNote`), and `hooks/bossRushProgress.ts` (`completeBossRushRoom` empty catch). Oldest WX owner is **#327**; **#363** / **#419** already queue feel floats. **#845** / **#354** own Recap chrome. **#1341** owns overworld-boss reward snapshot — union, do not overwrite; this ledger’s 001 is *naming* only. **#803** owns Boss Rush abort/complete order — union `bossRushProgress.ts` for 006; do not restack abort. Persist-fail follow-up run `bc-57831d4f-ed16-534c-8b15-87a05b2963aa` adds **005** / **006** only.
 
-Hover-crit omission stays a matrix note. Cooldown-slot pulse stays unfiled. Challenge HUD stays a non-hole. Occupied player walk float already ships on main. Summon fade float stays #419 / 09-22-007. Standing lava turn-start is not a mechanic. Glyph/larva/Iron Curse heal-half/push-pull stay MIMA.
+Hover-crit omission stays a matrix note. Cooldown-slot pulse stays unfiled. Challenge HUD stays a non-hole. Occupied player walk float already ships on main. Summon fade float stays #419 / 09-22-007. Standing lava turn-start is not a mechanic. Glyph/larva/Iron Curse heal-half/push-pull stay MIMA. Do not re-file shop/heal/victory/death/portal/dungeon/feat/BR-advance persist-fails (10-25-004 … 10-28-003). Ground Doka float-before-commit stays a 10-26 non-hole.
 
 ---
 
@@ -98,4 +98,38 @@ AUTONOMY: RECOMMEND
 DEPENDENCIES: none for fail toast; #419 for success juice ordering  
 REGRESSION_RISK: LOW — presentation on an already-failing settle  
 VALIDATION_REQUIRED: Force shrine credit `#err`; one fail toast; flag released for retry; successful credit still juiced once #419 lands; no double-mint.  
+STATUS: NEW
+
+---
+
+ACTION_ID: GFCF-2026-10-31-005  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Spell-bar `setSpellBarOrder` persist-fail needs a player cue after the bar already reordered  
+CATEGORY: combat-feedback  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `handleSetActiveSpells` optimistic `setActiveSpellIds(optimisticIds)` (`WX` 2888) + localStorage (`WX` 2905–2908) before debounced `flushSpellBarSave` (`WX` 2951–3044). `#err` → `console.error("[SpellOrderSave] setSpellBarOrder #err:", …)` (`WX` 2970–2973) + silent 2s retry; throw → `console.error("[SpellOrderSave] setSpellBarOrder failed:", e)` (`WX` 3022) + same silent retry. Initial empty-order path paints `first8` then saves (`WX` 2617–2659) with `console.error` / `console.warn` only. Dirty-guard keeps the lying HUD for the session; reload before `#ok` restores the stale canister order. Distinct from 10-24-003 spell-*book upgrade* (`upgradeSpell` awaits before HUD at `WX` 3147–3216). Distinct from shrine 004 and filed credit persist-fails through 10-28-003.  
+SYSTEMS_AFFECTED: WorldExploration `handleSetActiveSpells` / `flushSpellBarSave` / initial `setSpellBarOrder` (`WX` 2617–2659, 2888, 2951–3044)  
+RECOMMENDED_ACTION: `toast.error` once when `#err` / throw remains after the scheduled retry (or on first fail). Keep dirty-guard and one-shot retry. Do not toast every successful bar save. Do not change `spellBarOrder` authority.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: existing sonner toast; spellBarDirty / retry refs; #327 owns WX  
+REGRESSION_RISK: LOW — presentation on an already-failing save. In-battle “Changes will apply after battle” must not double with a persist-fail toast until the post-battle flush actually fails.  
+VALIDATION_REQUIRED: Swap two bar slots; `#ok` → no error toast. Force `#err` then retry still failing → one error toast; reload matches canister. Spell-upgrade fail still 10-24-003.  
+STATUS: NEW
+
+---
+
+ACTION_ID: GFCF-2026-10-31-006  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: `completeBossRushRoom` empty-catch needs a player cue after room-clear / final sanctuary already showed  
+CATEGORY: combat-feedback  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `persistBossRushRoomClear` → `completeClearedRoom` (`hooks/bossRushProgress.ts` 184–194) `await actor.completeBossRushRoom?.(…, 0, 0)` then empty `catch { }`. Comment (164–166): must not skip wallet `applyRewards`. Non-final recap fires without awaiting persist (`WX` 12813–12828 + 12925–12928). Final room opens white sanctuary + gateway log (`WX` 12697–12727) **before** the rewards persist block. Master complete / run count / `highestRoomCompleted` can miss while the player already saw clear/run-complete chrome. Distinct from 10-26-003 room-clear *reward* catch (`WX` 12863–12868). Distinct from 10-28-003 portal-step `setBossRushProgress` after spawn. Distinct from #803 abort / complete(9) order. Distinct from #845 Complete *banner*. Distinct from 10-29-004 resume-*read*.  
+SYSTEMS_AFFECTED: `hooks/bossRushProgress.ts` `completeClearedRoom` (`184–194`); callers via `persistRoomClear` / `handleBossRushRoomClear`  
+RECOMMENDED_ACTION: Replace empty catch with `console.error` + one `toast.error`. Keep not blocking `applyRewards`. Do not change `setBossRushProgress` / `resetBossRush` order (#803). Do not toast every successful complete.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: existing sonner; #803 complete/abort order; #327 owns WX; union `bossRushProgress.ts` / `useBossRush.ts` with #803  
+REGRESSION_RISK: LOW — presentation on an already-swallowed reject. Wallet credit must still land when complete fails.  
+VALIDATION_REQUIRED: Mid-tree clear with complete throw after `setBossRushProgress` `#ok` → wallet still credits, one error toast, no re-farm. Final room sanctuary still appears; forced complete throw → one error toast; reset still runs. Room-advance persist-fail still 10-28-003.  
 STATUS: NEW
